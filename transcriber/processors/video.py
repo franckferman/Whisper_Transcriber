@@ -125,17 +125,23 @@ class VideoProcessor:
         input_file: str,
         chunk_duration: int = 600,
         output_dir: Optional[str] = None,
-        extension: str = ".mp3",
+        extension: str = ".wav",
     ) -> List[str]:
         """
         Split an audio/video file into fixed-duration chunks.
-        Reuses the ffmpeg-based splitting logic from the audio_splitter repo.
+
+        The audio stream is decoded and re-encoded to 16 kHz mono PCM WAV --
+        the format every Whisper backend works in. Doing so (rather than a
+        stream copy) means the input can be anything ffmpeg reads: audio, or a
+        video whose audio track we pull directly. It also keeps chunks small
+        (~19 MB per 10 min, under the OpenAI 25 MB per-request cap) and drops
+        the mp3 encoder (libmp3lame) requirement the old copy path had.
 
         Args:
             input_file:     Path to the source audio/video file.
             chunk_duration: Duration of each chunk in seconds (default 600 = 10 min).
             output_dir:     Directory to write chunks into. Uses a temp dir if None.
-            extension:      Output file extension (default .mp3).
+            extension:      Chunk container extension (default .wav).
 
         Returns:
             Sorted list of absolute paths to the generated chunk files.
@@ -159,27 +165,23 @@ class VideoProcessor:
         if not file_path.is_file():
             raise RuntimeError(f"Input file not found: {input_file}")
 
-        # If the file is not a direct audio format, extract audio first
-        supported_audio = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus"}
-        if file_path.suffix.lower() not in supported_audio:
-            logger.info("Extracting audio from video file: %s", input_file)
-            extracted = self._extract_audio(input_file, extension=".mp3")
-            input_file = extracted
-
         logger.info(
             "Splitting '%s' into %ds chunks -> %s", input_file, chunk_duration, output_dir
         )
 
         try:
+            source = _ffmpeg.input(input_file)
             (
                 _ffmpeg
-                .input(input_file)
                 .output(
+                    source.audio,            # audio stream only (works for video too)
                     output_pattern,
                     f="segment",
                     segment_time=chunk_duration,
-                    c="copy",
                     reset_timestamps=1,
+                    acodec="pcm_s16le",
+                    ar=16000,
+                    ac=1,
                 )
                 .run(capture_stdout=True, capture_stderr=True)
             )
@@ -219,6 +221,8 @@ class VideoProcessor:
         download_dir = tempfile.mkdtemp(dir=self.temp_dir, prefix="ytdlp_")
         output_template = os.path.join(download_dir, self.ytdlp_output_template)
 
+        # Extract to WAV, not mp3: the chunker re-encodes to 16 kHz mono WAV
+        # anyway, and wav needs no mp3 encoder (libmp3lame) to be present.
         ydl_opts = {
             "format": self.ytdlp_format,
             "outtmpl": output_template,
@@ -228,8 +232,7 @@ class VideoProcessor:
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
+                    "preferredcodec": "wav",
                 }
             ],
         }
@@ -246,9 +249,9 @@ class VideoProcessor:
         if not downloaded:
             raise RuntimeError(f"yt-dlp produced no output files for: {url}")
 
-        # Prefer .mp3 if multiple files
-        mp3_files = [f for f in downloaded if f.suffix.lower() == ".mp3"]
-        chosen = mp3_files[0] if mp3_files else downloaded[0]
+        # Prefer the extracted .wav if several files linger
+        wav_files = [f for f in downloaded if f.suffix.lower() == ".wav"]
+        chosen = wav_files[0] if wav_files else downloaded[0]
         logger.info("Downloaded to: %s", chosen)
         return str(chosen)
 
@@ -275,28 +278,4 @@ class VideoProcessor:
             raise RuntimeError(f"HTTP download failed for {url}: {exc}") from exc
 
         logger.info("Downloaded to: %s", dest)
-        return dest
-
-    def _extract_audio(self, input_file: str, extension: str = ".mp3") -> str:
-        """Extract audio track from a video file using ffmpeg."""
-        if not _FFMPEG_AVAILABLE:
-            raise RuntimeError(
-                "ffmpeg-python is not installed. Install with: pip install ffmpeg-python"
-            )
-
-        src = Path(input_file)
-        dest = str(src.with_suffix(".extracted" + extension))
-        logger.debug("Extracting audio: %s -> %s", input_file, dest)
-
-        try:
-            (
-                _ffmpeg
-                .input(input_file)
-                .output(dest, acodec="libmp3lame", vn=None)
-                .run(capture_stdout=True, capture_stderr=True)
-            )
-        except _ffmpeg.Error as exc:
-            stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else "(no stderr)"
-            raise RuntimeError(f"Audio extraction failed:\n{stderr}") from exc
-
         return dest

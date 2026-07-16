@@ -31,7 +31,6 @@ from transcriber.backends.openai_api import OpenAIBackend
 from transcriber.config import TranscriptionConfig
 from transcriber.formatters.output import OutputFormatter
 from transcriber.processors.video import VideoProcessor
-from transcriber.processors.audio import convert_to_wav
 
 try:
     from tqdm import tqdm as _tqdm
@@ -190,15 +189,13 @@ class TranscriptionManager:
         chunks_dir = tempfile.mkdtemp(dir=self.config.temp_dir, prefix="wt_chunks_")
         self._temp_dirs.append(chunks_dir)
 
-        # Convert to WAV for whisper.cpp compatibility if needed
-        if self.config.backend == "whisper_cpp":
-            local_path = self._ensure_wav(local_path, chunks_dir)
-
+        # Chunks come out as 16 kHz mono WAV regardless of backend -- that's what
+        # whisper.cpp needs and what faster-whisper/openai happily accept.
         chunks = self.video_processor.split_into_chunks(
             input_file=local_path,
             chunk_duration=self.config.chunk_duration_seconds,
             output_dir=chunks_dir,
-            extension=".wav" if self.config.backend == "whisper_cpp" else ".mp3",
+            extension=".wav",
         )
 
         if not chunks:
@@ -207,13 +204,6 @@ class TranscriptionManager:
             chunks = [local_path]
 
         return chunks
-
-    def _ensure_wav(self, input_path: str, work_dir: str) -> str:
-        """Convert to WAV if the file is not already WAV (whisper.cpp requirement)."""
-        if Path(input_path).suffix.lower() == ".wav":
-            return input_path
-        logger.debug("Converting to WAV for whisper.cpp: %s", input_path)
-        return convert_to_wav(input_path, output_dir=work_dir)
 
     # ------------------------------------------------------------------
     # Internal: parallel transcription
