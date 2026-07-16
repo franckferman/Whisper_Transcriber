@@ -445,6 +445,20 @@ python main.py --dry-run --file video.mp4 --backend faster_whisper
 python main.py --config config.json
 ```
 
+> **YouTube and yt-dlp.** YouTube now deciphers its stream URLs with a JavaScript
+> challenge, and yt-dlp needs a JS runtime to solve it. Without one, yt-dlp falls
+> back to player clients (android/tv) that skip the challenge — short videos still
+> download, but some formats are missing, speeds can be throttled, and the path is
+> deprecated. For reliable YouTube support, install **Deno** on the host (yt-dlp
+> enables it by default and runs the untrusted player JS in its sandbox):
+>
+> ```bash
+> emerge dev-lang/deno-bin      # Gentoo; elsewhere see https://deno.land
+> ```
+>
+> yt-dlp auto-detects it — no whispr config needed. This is a host dependency; it
+> only affects YouTube URLs, not file uploads or direct HTTP links.
+
 ### All flags
 
 | Flag | Default | Description |
