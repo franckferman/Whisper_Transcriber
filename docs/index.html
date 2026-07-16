@@ -424,9 +424,9 @@ const S = [
     desc: `Transcribe a <span class="hl">YouTube URL</span> (or any HTTP URL) via yt-dlp. Audio is extracted, chunked with ffmpeg, transcribed in parallel, and output as <span class="hl">SRT subtitles</span>. Language auto-detected if <span class="hl">-l</span> is omitted.`,
   },
   {
-    raw:  `cd web && uvicorn app:app --host 0.0.0.0 --port 8000`,
-    html: `<span class="cmd">cd</span> <span class="str">web</span> <span class="op">&amp;&amp;</span> <span class="cmd">uvicorn</span> <span class="str">app:app</span> <span class="flag">--host</span> <span class="str">0.0.0.0</span> <span class="flag">--port</span> <span class="str">8000</span>`,
-    desc: `Launch the <span class="hl">FastAPI web UI</span>. Upload a file or paste a URL, pick a backend, monitor progress via <span class="hl">WebSocket</span> live logs, and download results in any format directly from the browser.`,
+    raw:  `cd web && uvicorn app:app --host 127.0.0.1 --port 8000`,
+    html: `<span class="cmd">cd</span> <span class="str">web</span> <span class="op">&amp;&amp;</span> <span class="cmd">uvicorn</span> <span class="str">app:app</span> <span class="flag">--host</span> <span class="str">127.0.0.1</span> <span class="flag">--port</span> <span class="str">8000</span>`,
+    desc: `Launch the <span class="hl">FastAPI web UI</span>. Upload a file or paste a URL, pick a backend, monitor progress via <span class="hl">WebSocket</span> live logs, and download results in any format directly from the browser. Binds to <span class="hl">localhost</span>; put it behind a reverse proxy with <span class="hl">WHISPR_AUTH_TOKEN</span> to expose it.`,
   },
   {
     raw:  `python main.py -f interview.mp3 --backend openai --openai-key $OPENAI_API_KEY -F srt,txt`,
