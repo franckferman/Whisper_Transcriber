@@ -548,7 +548,7 @@ make web
 # or manually
 source .venv/bin/activate
 pip install fastapi "uvicorn[standard]" python-multipart
-python -m uvicorn web.app:app --host 0.0.0.0 --port 8000
+python -m uvicorn web.app:app --host 127.0.0.1 --port 8000
 ```
 
 Open `http://localhost:8000`.
@@ -559,12 +559,36 @@ Open `http://localhost:8000`.
 - Auto-selects the best available backend: `faster_whisper` > `whisper_cpp` > `openai`
 - Per-backend options shown dynamically:
   - **faster-whisper**: model size dropdown (tiny / base / small / medium / large-v2)
-  - **whisper.cpp**: binary path and model path, auto-filled from detected installation
+  - **whisper.cpp**: binary and model taken from the server-detected installation
   - **OpenAI**: API key input
 - File upload (drag and drop) or URL (YouTube or direct link)
 - Language, output formats (TXT / SRT / VTT / JSON), and worker count
 - Real-time transcription log via WebSocket
 - Download buttons per format on completion
+
+### Exposing it publicly
+
+The server binds to `127.0.0.1` by default. Before putting it on a public
+address, terminate TLS on a reverse proxy in front of it and enable the token
+gate — the endpoints have no auth otherwise. Configuration is via environment
+variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WHISPR_AUTH_TOKEN` | *(unset)* | If set, every API/WebSocket call must send it (`X-Whispr-Token` header, `Authorization: Bearer`, or `?token=`). Unset = no auth (local use). |
+| `WHISPR_MAX_UPLOAD_MB` | `500` | Upload size ceiling (streamed to disk). |
+| `WHISPR_MAX_WORKERS` | `8` | Hard cap on the per-job worker count a request may ask for. |
+| `WHISPR_ALLOW_URL_FETCH` | `1` | Set to `0` to disable remote-URL transcription entirely (removes the SSRF surface). |
+
+```bash
+export WHISPR_AUTH_TOKEN="$(openssl rand -hex 24)"
+python -m uvicorn web.app:app --host 127.0.0.1 --port 8000   # behind your proxy
+```
+
+Remote URLs are vetted against non-public address ranges before fetching, but
+for defence in depth run the service as an unprivileged user on an
+egress-restricted network. whisper.cpp binary/model paths are pinned to what the
+server detected and cannot be set from the browser.
 
 ---
 
