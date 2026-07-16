@@ -12,6 +12,10 @@ OUTPUT   ?= ./output
 FILE     ?=
 URL      ?=
 
+# Web bind. Loopback by default -- put a reverse proxy in front to expose it.
+HOST     ?= 127.0.0.1
+PORT     ?= 8000
+
 .DEFAULT_GOAL := help
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
@@ -171,9 +175,9 @@ clean-all: clean ## Remove venv and output
 # ── Web interface ─────────────────────────────────────────────────────────────
 
 .PHONY: web
-web: ## Start web interface at http://localhost:8000
+web: ## Start web interface (HOST=127.0.0.1 PORT=8000; override to expose)
 	$(PIP) install --quiet fastapi "uvicorn[standard]" python-multipart
-	$(PY) -m uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload
+	$(PY) -m uvicorn web.app:app --host $(HOST) --port $(PORT)
 
 .PHONY: web-install
 web-install: ## Install web dependencies only

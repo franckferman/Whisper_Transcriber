@@ -246,7 +246,8 @@ else
 fi
 
 if [[ "${IFACE_CHOICE:-1}" == "2" || "${IFACE_CHOICE:-1}" == "3" ]]; then
-    echo "  Web UI:    python -m uvicorn web.app:app --host 0.0.0.0 --port 8000"
+    echo "  Web UI:    python -m uvicorn web.app:app --host 127.0.0.1 --port 8000"
     echo "  Open:      http://localhost:8000"
+    echo "  Public:    put a TLS reverse proxy in front and set WHISPR_AUTH_TOKEN"
 fi
 echo ""
