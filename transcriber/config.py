@@ -156,11 +156,17 @@ class TranscriptionConfig:
         logger.debug("Configuration validated successfully.")
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TranscriptionConfig":
-        """Build a TranscriptionConfig from a plain dictionary."""
-        interpolated = _interpolate_dict(data)
+    def from_dict(cls, data: dict, interpolate: bool = True) -> "TranscriptionConfig":
+        """
+        Build a TranscriptionConfig from a plain dictionary.
+
+        interpolate expands ${ENV_VAR} placeholders in string values -- handy for
+        config files, but pass interpolate=False for dicts built from untrusted
+        input (e.g. the web UI) so caller-supplied values can't read the env.
+        """
+        source = _interpolate_dict(data) if interpolate else data
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
-        filtered = {k: v for k, v in interpolated.items() if k in known_fields}
+        filtered = {k: v for k, v in source.items() if k in known_fields}
         return cls(**filtered)
 
     @classmethod

@@ -17,6 +17,7 @@ import asyncio
 import importlib
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -27,12 +28,28 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Make the parent directory importable so `transcriber` package resolves
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Make the parent dir (for `transcriber`) and this dir (for `security`) importable
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE.parent))
+sys.path.insert(0, str(_HERE))
 
-from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+import security as sec
+
+logger = logging.getLogger("whispr.web")
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -47,6 +64,29 @@ app = FastAPI(title="whispr Web UI", lifespan=lifespan)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+        "connect-src 'self'; frame-ancestors 'none'",
+    )
+    return resp
+
+
+def require_auth(request: Request) -> None:
+    """Gate for the JSON API. No-op unless WHISPR_AUTH_TOKEN is set."""
+    # header preferred; query param is the fallback for <a> downloads
+    supplied = sec.token_from_headers(request.headers) or request.query_params.get("token")
+    if not sec.token_ok(supplied):
+        raise HTTPException(status_code=401, detail="unauthorized")
 
 # ---------------------------------------------------------------------------
 # Job store
@@ -197,17 +237,65 @@ async def index() -> FileResponse:
     return FileResponse(str(_STATIC_DIR / "index.html"))
 
 
+def _public_backends() -> dict:
+    """Backend view for the browser -> availability only, no server paths."""
+    data = _detect_backends()
+    public = {}
+    for name, info in data.items():
+        entry = {
+            "available": info.get("available"),
+            "reason": info.get("reason"),
+            "install_hint": info.get("install_hint"),
+        }
+        if name == "whisper_cpp":
+            # server manages the paths now; only say whether a model is present
+            entry["model_available"] = bool(info.get("model_path"))
+        public[name] = entry
+    return public
+
+
 @app.get("/api/backends")
-async def get_backends() -> JSONResponse:
-    return JSONResponse(_detect_backends())
+async def get_backends(_: None = Depends(require_auth)) -> JSONResponse:
+    return JSONResponse(_public_backends())
 
 
 @app.get("/api/status/{job_id}")
-async def job_status(job_id: str) -> JSONResponse:
+async def job_status(job_id: str, _: None = Depends(require_auth)) -> JSONResponse:
     record = _get_job(job_id)
     if record is None:
         return JSONResponse({"error": "job not found"}, status_code=404)
     return JSONResponse({"job_id": job_id, "status": record.status})
+
+
+_VALID_BACKENDS = {"whisper_cpp", "faster_whisper", "openai"}
+_VALID_FORMATS = {"txt", "srt", "vtt", "json"}
+_FW_MODELS = {"tiny", "base", "small", "medium", "large-v2"}
+_LANG_RE = re.compile(r"^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$")
+
+
+async def _save_upload(file: UploadFile, output_dir: str) -> str:
+    """Stream an upload to disk under a sanitised name, capped at MAX_UPLOAD_BYTES."""
+    name = sec.safe_upload_name(file.filename)
+    dest = os.path.join(output_dir, name)
+
+    # belt-and-suspenders: never let the write escape the job dir
+    root = os.path.realpath(output_dir)
+    if os.path.commonpath([os.path.realpath(dest), root]) != root:
+        raise HTTPException(status_code=400, detail="invalid filename")
+
+    total = 0
+    with open(dest, "wb") as fh:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > sec.MAX_UPLOAD_BYTES:
+                fh.close()
+                os.remove(dest)
+                raise HTTPException(status_code=413, detail="upload too large")
+            fh.write(chunk)
+    return dest
 
 
 @app.post("/api/transcribe")
@@ -219,10 +307,9 @@ async def start_transcribe(
     workers: int = Form(2),
     openai_key: Optional[str] = Form(None),
     fw_model: Optional[str] = Form(None),
-    whisper_binary: Optional[str] = Form(None),
-    whisper_model: Optional[str] = Form(None),
     url: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
+    _: None = Depends(require_auth),
 ) -> JSONResponse:
     """
     Start a transcription job.
@@ -230,36 +317,36 @@ async def start_transcribe(
     Saves the uploaded file (or records the URL), creates a JobRecord,
     and launches the TranscriptionManager in a background thread.
     Returns immediately with {job_id}.
-    """
-    job_id = str(uuid.uuid4())
-    output_dir = tempfile.mkdtemp(prefix=f"wt_job_{job_id[:8]}_")
-    record = JobRecord(job_id=job_id, output_dir=output_dir)
-    _register_job(record)
 
-    # Resolve output formats
-    fmt_list = [f.strip() for f in formats.split(",") if f.strip()]
+    Note: whisper.cpp binary/model paths are NOT taken from the request -- they
+    are pinned to what the server detected, so a client can't point the server
+    at an arbitrary executable.
+    """
+    if backend not in _VALID_BACKENDS:
+        return JSONResponse({"error": "invalid backend"}, status_code=400)
+
+    # Output formats -> validate against the allowed set
+    fmt_list = [f.strip().lower() for f in formats.split(",") if f.strip()]
+    fmt_list = [f for f in fmt_list if f in _VALID_FORMATS]
     if not fmt_list:
         fmt_list = ["txt"]
 
-    # Language
-    lang = language if language and language != "auto" else None
+    # Language: keep only well-formed ISO-ish codes (blocks ${..} interpolation etc.)
+    lang = None
+    if language and language != "auto":
+        if not _LANG_RE.match(language):
+            return JSONResponse({"error": "invalid language code"}, status_code=400)
+        lang = language
 
-    # Persist uploaded file if needed
-    input_file: Optional[str] = None
-    input_url: Optional[str] = None
+    # Workers: clamp to a sane server-side range (client hints are advisory)
+    try:
+        workers = max(1, min(int(workers), sec.MAX_WORKERS))
+    except (TypeError, ValueError):
+        workers = 2
 
-    if source_type == "file" and file is not None:
-        upload_path = os.path.join(output_dir, file.filename or "upload")
-        content = await file.read()
-        with open(upload_path, "wb") as fh:
-            fh.write(content)
-        input_file = upload_path
-    elif source_type == "url" and url:
-        input_url = url
-    else:
-        return JSONResponse({"error": "Invalid source_type or missing file/url"}, status_code=400)
+    job_id = str(uuid.uuid4())
+    output_dir = tempfile.mkdtemp(prefix=f"wt_job_{job_id[:8]}_")
 
-    # Build config dict
     config_dict: dict = {
         "backend": backend,
         "language": lang,
@@ -268,22 +355,57 @@ async def start_transcribe(
         "output_dir": output_dir,
         "output_prefix": "transcript",
     }
-    if input_file:
-        config_dict["input_file"] = input_file
-    if input_url:
-        config_dict["input_url"] = input_url
 
+    # Resolve the input source
+    if source_type == "file" and file is not None:
+        config_dict["input_file"] = await _save_upload(file, output_dir)
+    elif source_type == "url" and url:
+        if not sec.ALLOW_URL_FETCH:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            return JSONResponse({"error": "remote URL fetching is disabled"}, status_code=403)
+        ok, reason = sec.is_safe_remote_url(url)
+        if not ok:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            return JSONResponse({"error": f"URL rejected: {reason}"}, status_code=400)
+        config_dict["input_url"] = url
+    else:
+        shutil.rmtree(output_dir, ignore_errors=True)
+        return JSONResponse({"error": "Invalid source_type or missing file/url"}, status_code=400)
+
+    # Backend-specific settings
     if backend == "faster_whisper" and fw_model:
+        if fw_model not in _FW_MODELS:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            return JSONResponse({"error": "invalid faster-whisper model"}, status_code=400)
         config_dict["faster_whisper_model"] = fw_model
 
-    if backend == "openai" and openai_key:
+    if backend == "openai":
+        # No env fallback here: an anonymous web caller must bring their own key,
+        # otherwise the server's OPENAI_API_KEY would get spent for them.
+        if not openai_key:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            return JSONResponse(
+                {"error": "OpenAI backend requires an API key"}, status_code=400
+            )
         config_dict["openai_api_key"] = openai_key
 
     if backend == "whisper_cpp":
-        if whisper_binary:
-            config_dict["whisper_cpp_binary"] = whisper_binary
-        if whisper_model:
-            config_dict["whisper_cpp_model"] = whisper_model
+        det = _detect_backends()["whisper_cpp"]
+        if not det.get("available") or not det.get("binary_path"):
+            shutil.rmtree(output_dir, ignore_errors=True)
+            return JSONResponse(
+                {"error": "whisper.cpp is not available on this server"}, status_code=400
+            )
+        if not det.get("model_path"):
+            shutil.rmtree(output_dir, ignore_errors=True)
+            return JSONResponse(
+                {"error": "no whisper.cpp model installed on this server"}, status_code=400
+            )
+        config_dict["whisper_cpp_binary"] = det["binary_path"]
+        config_dict["whisper_cpp_model"] = det["model_path"]
+
+    record = JobRecord(job_id=job_id, output_dir=output_dir)
+    _register_job(record)
 
     # Launch in background thread
     t = threading.Thread(
@@ -297,7 +419,9 @@ async def start_transcribe(
 
 
 @app.get("/api/download/{job_id}/{fmt}")
-async def download_result(job_id: str, fmt: str) -> FileResponse:
+async def download_result(
+    job_id: str, fmt: str, _: None = Depends(require_auth)
+) -> FileResponse:
     record = _get_job(job_id)
     if record is None:
         return JSONResponse({"error": "job not found"}, status_code=404)
@@ -319,6 +443,13 @@ async def websocket_progress(ws: WebSocket, job_id: str) -> None:
     Polls the job's log buffer every 500 ms, pushing new messages as JSON.
     Sends a final {"type": "done"} or {"type": "error"} frame when complete.
     """
+    # Auth (if enabled): token via ?token= or X-Whispr-Token, checked before accept
+    if sec.AUTH_TOKEN is not None:
+        supplied = ws.query_params.get("token") or sec.token_from_headers(ws.headers)
+        if not sec.token_ok(supplied):
+            await ws.close(code=1008)  # policy violation
+            return
+
     await ws.accept()
     record = _get_job(job_id)
     if record is None:
@@ -392,7 +523,8 @@ def _run_job(record: JobRecord, config_dict: dict) -> None:
         root_logger.setLevel(logging.INFO)
 
     try:
-        config = TranscriptionConfig.from_dict(config_dict)
+        # interpolate=False: this dict carries user input, don't expand ${ENV}
+        config = TranscriptionConfig.from_dict(config_dict, interpolate=False)
         manager = TranscriptionManager(config)
         manager.run()
 
@@ -413,9 +545,12 @@ def _run_job(record: JobRecord, config_dict: dict) -> None:
         record.status = "done"
         record.append_log("INFO", "Transcription complete.")
 
-    except Exception as exc:
+    except Exception:
+        # full detail to the server log; only a generic line to the client
+        # (raw exceptions leak filesystem paths and remote-fetch errors)
         record.status = "error"
-        record.append_log("ERROR", f"Job failed: {exc}")
+        logger.exception("Job %s failed", record.job_id)
+        record.append_log("ERROR", "Job failed. See server logs for details.")
     finally:
         root_logger.removeHandler(handler)
         transcriber_logger.removeHandler(handler)

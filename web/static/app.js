@@ -13,6 +13,34 @@
   let selectedFile = null;
   let backendsData = {};
 
+  // ---- Auth (only used when the server sets WHISPR_AUTH_TOKEN) --------------
+
+  let authToken = sessionStorage.getItem("whispr_token") || "";
+
+  function authHeaders() {
+    return authToken ? { "X-Whispr-Token": authToken } : {};
+  }
+
+  // fetch wrapper: attaches the token, and on 401 prompts once and retries
+  async function apiFetch(url, opts = {}, allowPrompt = true) {
+    opts.headers = Object.assign({}, opts.headers || {}, authHeaders());
+    const res = await fetch(url, opts);
+    if (res.status === 401 && allowPrompt) {
+      const entered = prompt("This whispr instance requires an access token:");
+      if (entered) {
+        authToken = entered.trim();
+        sessionStorage.setItem("whispr_token", authToken);
+        return apiFetch(url, opts, false);
+      }
+    }
+    return res;
+  }
+
+  function withToken(url) {
+    return authToken ? url + (url.includes("?") ? "&" : "?") +
+      "token=" + encodeURIComponent(authToken) : url;
+  }
+
   // ---- DOM references -------------------------------------------------------
 
   const tabFile       = document.getElementById("tab-file");
@@ -30,8 +58,6 @@
   const fasterWhisperRow   = document.getElementById("faster-whisper-row");
   const fwModelSelect      = document.getElementById("fw-model-select");
   const whisperCppRow      = document.getElementById("whisper-cpp-row");
-  const whisperBinInput    = document.getElementById("whisper-binary-input");
-  const whisperModelInput  = document.getElementById("whisper-model-input");
   const languageSel   = document.getElementById("language-select");
   const workersInput  = document.getElementById("workers-input");
   const transcribeBtn = document.getElementById("transcribe-btn");
@@ -100,7 +126,7 @@
 
   async function loadBackends() {
     try {
-      const res = await fetch("/api/backends");
+      const res = await apiFetch("/api/backends");
       backendsData = await res.json();
       renderBackends(backendsData);
     } catch (err) {
@@ -190,14 +216,6 @@
       backendList.appendChild(option);
     });
 
-    // Pre-fill whisper.cpp paths if detected
-    if (data.whisper_cpp && data.whisper_cpp.binary_path) {
-      whisperBinInput.value = data.whisper_cpp.binary_path;
-    }
-    if (data.whisper_cpp && data.whisper_cpp.model_path) {
-      whisperModelInput.value = data.whisper_cpp.model_path;
-    }
-
     updateExtraOptions();
   }
 
@@ -256,12 +274,7 @@
     if (selectedBackend === "openai" && openaiKeyInput.value.trim()) {
       fd.append("openai_key", openaiKeyInput.value.trim());
     }
-    if (selectedBackend === "whisper_cpp") {
-      if (whisperBinInput.value.trim())
-        fd.append("whisper_binary", whisperBinInput.value.trim());
-      if (whisperModelInput.value.trim())
-        fd.append("whisper_model", whisperModelInput.value.trim());
-    }
+    // whisper.cpp binary/model are pinned server-side -- nothing to send
 
     // Disable button, show progress
     transcribeBtn.disabled = true;
@@ -274,7 +287,7 @@
     // Submit job
     let jobId;
     try {
-      const res  = await fetch("/api/transcribe", { method: "POST", body: fd });
+      const res  = await apiFetch("/api/transcribe", { method: "POST", body: fd });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       jobId = data.job_id;
@@ -286,9 +299,9 @@
 
     progressStatus.textContent = "Running...";
 
-    // Open WebSocket
+    // Open WebSocket (token goes in the query string; browsers can't set ws headers)
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/${jobId}`);
+    const ws = new WebSocket(withToken(`${proto}://${location.host}/ws/${jobId}`));
 
     ws.onmessage = (evt) => {
       let msg;
@@ -318,7 +331,7 @@
 
   async function pollStatus(jobId) {
     try {
-      const res  = await fetch(`/api/status/${jobId}`);
+      const res  = await apiFetch(`/api/status/${jobId}`, {}, false);
       const data = await res.json();
       if (data.status === "done") {
         onJobDone({ job_id: jobId, formats: [] });
@@ -342,7 +355,7 @@
     fmts.forEach((fmt) => {
       const a = document.createElement("a");
       a.className = "btn btn--download";
-      a.href = `/api/download/${msg.job_id}/${fmt}`;
+      a.href = withToken(`/api/download/${msg.job_id}/${fmt}`);
       a.download = "";
       a.innerHTML = `<span class="dl-icon">&#8615;</span> ${fmt.toUpperCase()}`;
       downloadRow.appendChild(a);
@@ -390,7 +403,9 @@
   function escHtml(str) {
     return str.replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;");
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#39;");
   }
 
   // ---- Init ----------------------------------------------------------------

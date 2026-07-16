@@ -81,19 +81,11 @@
           </select>
         </div>
 
-        <!-- whisper.cpp paths -->
+        <!-- whisper.cpp: binary + model are managed server-side -->
         <div class="extra-option" id="whisper-cpp-row" hidden>
-          <label class="extra-option__label" for="whisper-binary-input">
-            Binary path
-          </label>
-          <input type="text" id="whisper-binary-input" class="text-input"
-                 placeholder="/path/to/whisper.cpp/main" />
-          <label class="extra-option__label" for="whisper-model-input"
-                 style="margin-top:8px">
-            Model path
-          </label>
-          <input type="text" id="whisper-model-input" class="text-input"
-                 placeholder="/path/to/whisper.cpp/models/ggml-base.bin" />
+          <p class="extra-option__note" id="whisper-cpp-note">
+            Uses the whisper.cpp binary and model detected on the server.
+          </p>
         </div>
       </section>
 
