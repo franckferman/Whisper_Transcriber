@@ -30,6 +30,7 @@ from transcriber.backends.faster_whisper import FasterWhisperBackend
 from transcriber.backends.openai_api import OpenAIBackend
 from transcriber.config import TranscriptionConfig
 from transcriber.formatters.output import OutputFormatter
+from transcriber.processors.translate import LocalTranslator, TranslationError
 from transcriber.processors.video import VideoProcessor
 
 try:
@@ -104,12 +105,18 @@ class TranscriptionManager:
             ytdlp_format=config.ytdlp_format,
             ytdlp_output_template=config.ytdlp_output_template,
         )
-        self._primary_backend = _make_backend(config, config.backend)
-        self._fallback_backend: Optional[TranscriptionBackend] = (
-            _make_backend(config, config.fallback_backend)
-            if config.fallback_backend
-            else None
-        )
+        # In translation-only mode there is no audio, so no backend is built.
+        self._translate_only = bool(config.translate_text_input)
+        if self._translate_only:
+            self._primary_backend = None  # type: ignore[assignment]
+            self._fallback_backend = None
+        else:
+            self._primary_backend = _make_backend(config, config.backend)
+            self._fallback_backend: Optional[TranscriptionBackend] = (
+                _make_backend(config, config.fallback_backend)
+                if config.fallback_backend
+                else None
+            )
 
         # Track temp directories created by this manager
         self._temp_dirs: List[str] = []
@@ -131,6 +138,12 @@ class TranscriptionManager:
             RuntimeError:     On unrecoverable errors.
         """
         self.config.validate()
+
+        # Translation-only mode: no audio, just translate an existing text file.
+        if self._translate_only:
+            self._run_translate_only()
+            return
+
         source = self.config.input_url or self.config.input_file
         assert source is not None  # validate() guarantees this
 
@@ -140,11 +153,18 @@ class TranscriptionManager:
             logger.info("Fallback backend: %s", self.config.fallback_backend)
         logger.info("Output formats: %s", self.config.output_formats)
         logger.info("Workers: %d", self.config.workers)
+        if self.config.translate_to:
+            logger.info("Translation target: %s", self.config.translate_to)
 
         if self.config.dry_run:
             logger.info("[DRY-RUN] Would process: %s", source)
             logger.info("[DRY-RUN] Backend: %s", self.config.backend)
             logger.info("[DRY-RUN] Chunk duration: %ds", self.config.chunk_duration_seconds)
+            if self.config.translate_to:
+                logger.info(
+                    "[DRY-RUN] Would translate transcript to: %s",
+                    self.config.translate_to,
+                )
             logger.info("[DRY-RUN] No files will be written.")
             return
 
@@ -166,8 +186,118 @@ class TranscriptionManager:
             for path in output_paths:
                 logger.info("Output written: %s", path)
 
+            # Optional translation stage: keep the original, add a translated copy.
+            if self.config.translate_to:
+                self._translate_and_write(merged)
+
         finally:
             self._cleanup()
+
+    # ------------------------------------------------------------------
+    # Internal: translation
+    # ------------------------------------------------------------------
+
+    def _build_translator(self) -> LocalTranslator:
+        """Construct a LocalTranslator from the current config."""
+        return LocalTranslator(
+            allow_download=self.config.translate_allow_download,
+            package_path=self.config.translate_package_path,
+        )
+
+    def _translated_prefix(self) -> str:
+        """Output prefix for translated files: '{prefix}.{target_lang}'."""
+        return f"{self.config.output_prefix}.{self.config.translate_to}"
+
+    def _translate_and_write(self, merged: TranscriptionResult) -> None:
+        """
+        Translate an already-written transcript and write the translated copy.
+
+        A missing optional dependency or a translation error is logged and
+        skipped -- the original transcript has already been written, so a
+        translation failure never loses the primary result.
+        """
+        translator = self._build_translator()
+        if not translator.is_available():
+            logger.warning(
+                "Translation requested (translate_to=%s) but 'argostranslate' "
+                "is not installed; skipping. The original transcript was "
+                "written. Install the optional translation extra to enable it.",
+                self.config.translate_to,
+            )
+            return
+
+        try:
+            translated = translator.translate_result(
+                merged,
+                to_code=self.config.translate_to,  # type: ignore[arg-type]
+                from_code=self.config.translate_from,
+            )
+        except TranslationError as exc:
+            logger.error("Translation failed: %s", exc)
+            return
+
+        if translated is merged:
+            # Source and target languages matched; nothing new to write.
+            return
+
+        translated_formatter = OutputFormatter(
+            output_dir=self.config.output_dir,
+            output_prefix=self._translated_prefix(),
+        )
+        paths = translated_formatter.write(translated, self.config.output_formats)
+        for path in paths:
+            logger.info("Translated output written: %s", path)
+
+    def _run_translate_only(self) -> None:
+        """
+        Translate an existing text file with no transcription step.
+
+        The source and target languages are both required (validated upstream),
+        since a plain text file carries no detected language. Output goes to
+        '{prefix}.{target}.{fmt}'.
+        """
+        text_path = Path(self.config.translate_text_input)  # type: ignore[arg-type]
+        if not text_path.is_file():
+            raise FileNotFoundError(f"Text file not found: {text_path}")
+
+        source = self.config.translate_from
+        target = self.config.translate_to
+        logger.info(
+            "Translation-only run: %s (%s -> %s)", text_path, source, target
+        )
+
+        if self.config.dry_run:
+            logger.info(
+                "[DRY-RUN] Would translate %s from %s to %s", text_path, source, target
+            )
+            logger.info("[DRY-RUN] No files will be written.")
+            return
+
+        translator = self._build_translator()
+        if not translator.is_available():
+            raise RuntimeError(
+                "Translation requires the optional 'argostranslate' package, "
+                "which is not installed."
+            )
+
+        text = text_path.read_text(encoding="utf-8")
+        result = TranscriptionResult(
+            text=text,
+            language=source,
+            source_file=str(text_path),
+            backend_name="(translate-only)",
+        )
+        translated = translator.translate_result(
+            result, to_code=target, from_code=source  # type: ignore[arg-type]
+        )
+
+        formatter = OutputFormatter(
+            output_dir=self.config.output_dir,
+            output_prefix=self._translated_prefix(),
+        )
+        paths = formatter.write(translated, self.config.output_formats)
+        for path in paths:
+            logger.info("Translated output written: %s", path)
 
     # ------------------------------------------------------------------
     # Internal: chunk preparation

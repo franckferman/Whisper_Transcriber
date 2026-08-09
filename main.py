@@ -49,6 +49,12 @@ examples:
 
   Dry run (no output written):
     python main.py --dry-run --file audio.mp3 --backend whisper_cpp
+
+  Transcribe then translate locally to French (keeps the original):
+    python main.py --file talk.mp4 --language en --translate-to fr
+
+  Translate an existing text file, no transcription:
+    python main.py --translate-text notes.txt --translate-from en --translate-to fr
         """,
     )
 
@@ -63,6 +69,14 @@ examples:
         "--url", "-u",
         metavar="URL",
         help="URL to a YouTube video or direct audio/video URL.",
+    )
+    input_group.add_argument(
+        "--translate-text",
+        metavar="PATH",
+        help=(
+            "Translate an existing text file locally, with no transcription. "
+            "Requires --translate-to and --translate-from."
+        ),
     )
 
     # ---- Config file ----
@@ -130,6 +144,35 @@ examples:
         type=int,
         metavar="SECONDS",
         help="Duration of each audio chunk in seconds (default: 600).",
+    )
+
+    # ---- Translation (fully local, optional 'argostranslate' extra) ----
+    parser.add_argument(
+        "--translate-to",
+        metavar="LANG",
+        help=(
+            "Target ISO 639-1 code (e.g. 'en', 'fr'). Enables local translation "
+            "of the transcript after transcription; the original is kept and a "
+            "'{prefix}.{LANG}.{fmt}' copy is written."
+        ),
+    )
+    parser.add_argument(
+        "--translate-from",
+        metavar="LANG",
+        help=(
+            "Source ISO 639-1 code for translation. Defaults to the detected/"
+            "--language value; required with --translate-text."
+        ),
+    )
+    parser.add_argument(
+        "--translate-model",
+        metavar="PATH",
+        help="Path to a local .argosmodel package for fully offline translation.",
+    )
+    parser.add_argument(
+        "--no-translate-download",
+        action="store_true",
+        help="Never download translation models; use only locally installed ones.",
     )
     parser.add_argument(
         "--workers", "-w",
@@ -219,6 +262,16 @@ def main() -> int:
         overrides["input_file"] = args.file
     if args.url:
         overrides["input_url"] = args.url
+    if args.translate_text:
+        overrides["translate_text_input"] = args.translate_text
+    if args.translate_to:
+        overrides["translate_to"] = args.translate_to
+    if args.translate_from:
+        overrides["translate_from"] = args.translate_from
+    if args.translate_model:
+        overrides["translate_package_path"] = args.translate_model
+    if args.no_translate_download:
+        overrides["translate_allow_download"] = False
     if args.backend:
         overrides["backend"] = args.backend
     if args.fallback_backend:

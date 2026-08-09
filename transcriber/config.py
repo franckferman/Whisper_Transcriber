@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 # Regex to match ${VAR_NAME} placeholders
 _ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
+# ISO 639-1 codes are two lowercase letters (e.g. 'en', 'fr').
+_ISO639_1_PATTERN = re.compile(r"^[a-z]{2}$")
+
+
+def _is_iso639_1(code: str) -> bool:
+    """Return True if ``code`` looks like an ISO 639-1 language code."""
+    return bool(_ISO639_1_PATTERN.match(code))
+
 
 def _interpolate_env(value: str) -> str:
     """Replace ${VAR_NAME} references in a string with environment variable values."""
@@ -95,6 +103,13 @@ class TranscriptionConfig:
     output_dir: str = "."
     output_prefix: str = "transcript"
 
+    # Translation (fully local, optional -- requires the 'argostranslate' extra)
+    translate_to: Optional[str] = None       # target ISO 639-1 code; enables translation
+    translate_from: Optional[str] = None     # source override; defaults to detected language
+    translate_package_path: Optional[str] = None  # local .argosmodel for offline setups
+    translate_allow_download: bool = True    # allow one-time model download from the Argos index
+    translate_text_input: Optional[str] = None  # translate an existing text file, no transcription
+
     # Retry / resilience
     max_retries: int = 3
     retry_base_delay: float = 1.0
@@ -116,8 +131,33 @@ class TranscriptionConfig:
         Raises:
             ValueError: If required fields are missing or invalid.
         """
-        if not self.input_file and not self.input_url:
-            raise ValueError("Either 'input_file' or 'input_url' must be provided.")
+        # Translation-only runs take a text file instead of audio/video input.
+        if self.translate_text_input:
+            if not self.translate_to:
+                raise ValueError(
+                    "'translate_text_input' requires 'translate_to' (target language)."
+                )
+            if not self.translate_from:
+                raise ValueError(
+                    "'translate_text_input' requires 'translate_from': the source "
+                    "language of a plain text file cannot be auto-detected."
+                )
+        elif not self.input_file and not self.input_url:
+            raise ValueError(
+                "Either 'input_file', 'input_url', or 'translate_text_input' "
+                "must be provided."
+            )
+
+        if self.translate_to is not None and not _is_iso639_1(self.translate_to):
+            raise ValueError(
+                f"Invalid 'translate_to' language code '{self.translate_to}'. "
+                f"Expected an ISO 639-1 code such as 'en' or 'fr'."
+            )
+        if self.translate_from is not None and not _is_iso639_1(self.translate_from):
+            raise ValueError(
+                f"Invalid 'translate_from' language code '{self.translate_from}'. "
+                f"Expected an ISO 639-1 code such as 'en' or 'fr'."
+            )
 
         valid_backends = {"whisper_cpp", "faster_whisper", "openai"}
         if self.backend not in valid_backends:
