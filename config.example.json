@@ -27,6 +27,12 @@
   "output_dir": "./output",
   "output_prefix": "transcript",
 
+  "translate_to": null,
+  "translate_from": null,
+  "translate_package_path": null,
+  "translate_allow_download": true,
+  "translate_text_input": null,
+
   "max_retries": 3,
   "retry_base_delay": 1.0,
   "retry_max_delay": 30.0,

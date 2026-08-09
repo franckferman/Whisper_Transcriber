@@ -21,6 +21,7 @@
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
+- [Translation](#translation)
 - [Web Interface](#web-interface)
 - [Makefile Reference](#makefile-reference)
 - [References](#references)
@@ -386,6 +387,11 @@ String values support `${ENV_VAR}` interpolation:
 | `output_formats` | `["txt"]` | Output formats: `txt`, `json`, `srt`, `vtt` |
 | `output_dir` | `.` | Directory where output files are written |
 | `output_prefix` | `transcript` | Filename prefix for output files |
+| `translate_to` | `null` | Target ISO 639-1 code; set it to translate the transcript locally |
+| `translate_from` | `null` | Source override; defaults to the detected/`language` value |
+| `translate_package_path` | `null` | Local `.argosmodel` file for fully offline translation |
+| `translate_allow_download` | `true` | Allow one-time model download from the Argos index |
+| `translate_text_input` | `null` | Translate an existing text file instead of transcribing audio |
 | `max_retries` | `3` | Retry attempts per chunk before declaring failure |
 | `retry_base_delay` | `1.0` | Base delay in seconds for exponential backoff |
 | `retry_max_delay` | `30.0` | Maximum backoff delay cap in seconds |
@@ -441,6 +447,12 @@ python main.py --file film.mp4 --backend faster_whisper \
 # Dry run
 python main.py --dry-run --file video.mp4 --backend faster_whisper
 
+# Transcribe, then translate the result to French (keeps the original)
+python main.py --file talk.mp4 --language en --translate-to fr --format txt,srt
+
+# Translate an existing transcript, no transcription
+python main.py --translate-text transcript.txt --translate-from en --translate-to fr
+
 # Load config from file
 python main.py --config config.json
 ```
@@ -479,6 +491,11 @@ python main.py --config config.json
 | `--format`, `-F` | `txt` | Output formats, comma-separated: `txt,json,srt,vtt` |
 | `--output-dir`, `-o` | `.` | Output directory |
 | `--output-prefix` | `transcript` | Output filename prefix |
+| `--translate-to` | | Target ISO 639-1 code; translate the transcript locally |
+| `--translate-from` | detected | Source ISO 639-1 code; required with `--translate-text` |
+| `--translate-text` | | Translate an existing text file, no transcription |
+| `--translate-model` | | Local `.argosmodel` package for offline translation |
+| `--no-translate-download` | | Never download models; use only installed ones |
 | `--max-retries` | `3` | Retry attempts per chunk on failure |
 | `--dry-run` | | Print plan without executing |
 | `--debug` | | Enable DEBUG logging |
@@ -547,6 +564,42 @@ If all retries fail and a fallback backend is configured, the entire job restart
 python main.py --file video.mp4 --backend faster_whisper \
     --fallback-backend openai --max-retries 5
 ```
+
+---
+
+## Translation
+
+whispr can translate a transcript into another language **fully locally** — no online service, no API key. Translation is powered by [Argos Translate](https://github.com/argosopentech/argos-translate) (OPUS-MT models on the same CTranslate2 engine faster-whisper uses).
+
+It is an **optional extra**, kept out of the core dependencies because it is heavier (it pulls `stanza` → `torch`):
+
+```bash
+pip install -r requirements-translate.txt
+```
+
+Language models are provisioned on first use — downloaded once from the Argos index, or supplied offline via `--translate-model path/to/model.argosmodel` (pair `--no-translate-download` with it for an air-gapped setup). After that, all translation runs on-device.
+
+### Two modes
+
+```bash
+# 1. Transcribe, then translate. The original transcript is kept; a translated
+#    copy is written as {prefix}.{lang}.{fmt} (e.g. transcript.fr.txt).
+python main.py --file talk.mp4 --language en --translate-to fr --format txt,srt
+
+# 2. Translate an existing text file, no transcription. Source is required
+#    because a plain .txt carries no detected language.
+python main.py --translate-text transcript.txt --translate-from en --translate-to fr
+```
+
+`--translate-to en` reproduces Whisper's translate-to-English behaviour, but any supported pair works in both directions (`--translate-to fr`, `es`, ...), unlike Whisper's English-only `translate` task.
+
+### How it behaves
+
+- **The original is never overwritten.** Translated output is written alongside it with a `.{lang}` suffix.
+- **Timestamps are preserved.** For `srt`/`vtt`, each subtitle segment is translated individually so cues stay aligned. The `txt`/`json` body is translated as a whole for better context — so a subtitle line and the plain-text body may be phrased slightly differently. That is expected: alignment for subtitles, context for prose.
+- **Graceful when absent.** If `argostranslate` is not installed, a transcription+translation run still writes the transcript and logs a clear warning instead of failing.
+
+> Translation quality is that of the underlying OPUS-MT model for the pair, and is independent of the transcription backend.
 
 ---
 

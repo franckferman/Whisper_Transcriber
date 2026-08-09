@@ -1,0 +1,14 @@
+# Optional: local, offline translation (--translate-to / --translate-text).
+#
+# Install only if you need translation:
+#     pip install -r requirements-translate.txt
+#
+# This pulls Argos Translate, which runs OPUS-MT models on CTranslate2 -- the
+# same engine faster-whisper already uses. It is heavier than whispr's core
+# (argostranslate depends on stanza -> torch), which is exactly why it lives in
+# a separate, opt-in requirements file and never in the core requirements.txt.
+#
+# Language models are installed on first use (downloaded once from the Argos
+# index, or provided offline via --translate-model / translate_package_path),
+# then all translation runs on-device with no online service.
+argostranslate>=1.9,<2
