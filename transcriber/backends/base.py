@@ -31,6 +31,10 @@ class TranscriptionResult:
     backend_name: Optional[str] = None
     # Duration in seconds, if known
     duration: Optional[float] = None
+    # True if this result was produced by translating another transcript
+    translated: bool = False
+    # Original source language when translated (ISO 639-1), else None
+    source_language: Optional[str] = None
 
     def is_empty(self) -> bool:
         """Return True if the transcription text is empty or whitespace-only."""

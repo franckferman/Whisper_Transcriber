@@ -131,6 +131,8 @@ class OutputFormatter:
             "backend": result.backend_name,
             "duration": result.duration,
             "source_file": result.source_file,
+            "translated": result.translated,
+            "source_language": result.source_language,
             "segments": result.segments,
         }
         with open(path, "w", encoding="utf-8") as fh:
