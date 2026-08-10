@@ -208,29 +208,53 @@ The pipeline calls the binary as a subprocess and reads the output JSON from dis
 whisper-cli -m <model.bin> -f <audio.wav> --language fr --output-json -of <output_base>
 ```
 
+### Mega-ASR (`mega_asr`)
+
+An **optional, specialist** backend wrapping [Mega-ASR](https://github.com/xzf-thu/Mega-ASR) — a robustness LoRA + router on top of Qwen3-ASR-1.7B, aimed at **heavily degraded audio** (noise, far-field, echo, recording artefacts) where the Whisper backends tend to hallucinate, drop utterances, or return empty output. It is a last-resort backend, not a default.
+
+Two constraints shape how whispr uses it:
+
+- **The LoRA is English/Chinese only.** It was trained on the en/zh Voices-in-the-Wild-2M set, so its robustness gain does not transfer to other languages. whispr mounts the LoRA **only for `en`/`zh`**; for the other ~28 Qwen3-ASR languages it runs the base model (LoRA off) and warns. A language Qwen3-ASR does not support is rejected up front. Mega-ASR's own router keys off *audio quality*, not language, so whispr bypasses it and drives the LoRA from the language instead.
+- **It is heavy and GPU-oriented.** A 1.7B model in Transformers on CPU is slow, so CPU is opt-in (`--mega-allow-cpu`). Inference is serialised behind a lock (the wrapper mutates shared LoRA state), so this backend is effectively single-threaded regardless of `--workers`.
+
+**v1 returns text only** (no per-segment timestamps), so `srt`/`vtt` fall back to a single block — use `txt`/`json`. Timestamps would need Qwen3-ForcedAligner and are left for later.
+
+**Setup** (the `MegaASR` wrapper is not on PyPI — it ships with the repo):
+```bash
+pip install -r requirements-mega.txt
+git clone https://github.com/xzf-thu/Mega-ASR
+cd Mega-ASR && python scripts/download.py      # fetches ckpt/Mega-ASR
+
+# then, from whispr, on English degraded audio:
+python main.py --file noisy_interview.wav --backend mega_asr --language en \
+    --mega-repo /path/to/Mega-ASR --mega-device cuda:0 --format txt,json
+```
+
+> Because it caps parallelism and needs a GPU + a repo clone + multi-GB weights, keep `mega_asr` as a targeted tool for audio the other backends fail on — it also pairs well as a `--fallback-backend` for English jobs.
+
 ### Comparison
 
-| | whisper_cpp | faster_whisper | openai |
-|---|---|---|---|
-| **Inference engine** | GGML (C++) | CTranslate2 (C++) | OpenAI server |
-| **Model format** | GGML `.bin` | CTranslate2 (HuggingFace) | Server-side |
-| **Quantization** | Static (at conversion) | Dynamic (at load time) | N/A |
-| **Model auto-download** | No | Yes (HuggingFace, first run) | N/A |
-| **Offline** | Yes | Yes | No |
-| **GPU support** | No | Yes (CUDA) | N/A |
-| **RAM (base model)** | ~200 MB | ~500 MB | None |
-| **Speed (CPU)** | Fastest | Fast | Network-bound |
-| **Cost** | Free | Free | ~$0.006/min |
-| **Privacy** | Full (local) | Full (local) | Audio sent to OpenAI |
-| **Setup** | High (compile + model) | Minimal | Minimal (API key) |
+| | whisper_cpp | faster_whisper | openai | mega_asr |
+|---|---|---|---|---|
+| **Inference engine** | GGML (C++) | CTranslate2 (C++) | OpenAI server | Transformers (Qwen3-ASR) |
+| **Model format** | GGML `.bin` | CTranslate2 (HuggingFace) | Server-side | HuggingFace + LoRA |
+| **Quantization** | Static (at conversion) | Dynamic (at load time) | N/A | bf16 (GPU) |
+| **Model auto-download** | No | Yes (HuggingFace, first run) | N/A | No (clone + download.py) |
+| **Offline** | Yes | Yes | No | Yes |
+| **GPU support** | No | Yes (CUDA) | N/A | Yes (recommended) |
+| **RAM (base model)** | ~200 MB | ~500 MB | None | ~4 GB (1.7B) |
+| **Speed (CPU)** | Fastest | Fast | Network-bound | Slow (opt-in) |
+| **Cost** | Free | Free | ~$0.006/min | Free |
+| **Privacy** | Full (local) | Full (local) | Audio sent to OpenAI | Full (local) |
+| **Setup** | High (compile + model) | Minimal | Minimal (API key) | High (clone + weights) |
 
-| | whisper_cpp | faster_whisper | openai |
-|---|---|---|---|
-| **Best for** | Low RAM machines, offline/embedded, maximum CPU speed | General use, GPU, easy setup | No local compute, one-off jobs |
-| **Advantages** | Lowest footprint, SIMD-optimised, no Python at runtime | Trivial install, CUDA, int8, word timestamps, active development | Zero local setup, no model management |
-| **Disadvantages** | Requires compilation, WAV 16 kHz only, no GPU, manual model download | Slower than whisper.cpp on CPU, higher RAM | Internet required, paid, audio leaves your machine, no model choice |
+| | whisper_cpp | faster_whisper | openai | mega_asr |
+|---|---|---|---|---|
+| **Best for** | Low RAM machines, offline/embedded, maximum CPU speed | General use, GPU, easy setup | No local compute, one-off jobs | Heavily degraded en/zh audio |
+| **Advantages** | Lowest footprint, SIMD-optimised, no Python at runtime | Trivial install, CUDA, int8, word timestamps, active development | Zero local setup, no model management | Robust on noisy/far-field speech, fewer hallucinations |
+| **Disadvantages** | Requires compilation, WAV 16 kHz only, no GPU, manual model download | Slower than whisper.cpp on CPU, higher RAM | Internet required, paid, audio leaves your machine, no model choice | GPU + repo clone + multi-GB weights, en/zh LoRA only, no timestamps yet, single-threaded |
 
-**Recommended:** `faster_whisper` for most use cases.
+**Recommended:** `faster_whisper` for most use cases; `mega_asr` only for degraded English/Chinese audio the others fail on.
 
 ---
 
@@ -380,6 +404,11 @@ String values support `${ENV_VAR}` interpolation:
 | `whisper_cpp_extra_args` | `[]` | Additional CLI arguments forwarded verbatim to the binary |
 | `openai_api_key` | `${OPENAI_API_KEY}` | OpenAI API key |
 | `openai_model` | `whisper-1` | OpenAI model identifier |
+| `mega_asr_repo_dir` | `null` | Path to a local xzf-thu/Mega-ASR clone (provides the wrapper) |
+| `mega_asr_ckpt_dir` | `null` | Checkpoint root (default: `<repo>/ckpt/Mega-ASR`) |
+| `mega_asr_device_map` | `null` | Device map: `cuda:0`, `mps`, `cpu` |
+| `mega_asr_allow_cpu` | `false` | Allow CPU inference (slow for a 1.7B model) |
+| `mega_asr_force_lora` | `false` | Mount the LoRA regardless of language (en/zh-tuned only) |
 | `language` | `null` | ISO 639-1 code (`fr`, `en`, ...) or `null` for auto-detect |
 | `chunk_duration_seconds` | `600` | Duration of each audio chunk in seconds |
 | `workers` | `2` | Number of parallel transcription threads |
@@ -485,6 +514,11 @@ python main.py --config config.json
 | `--fw-model` | `base` | faster-whisper model size |
 | `--fw-device` | `cpu` | faster-whisper device: `cpu` \| `cuda` |
 | `--openai-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--mega-repo` | | Path to a local xzf-thu/Mega-ASR clone |
+| `--mega-ckpt` | | Mega-ASR checkpoint root (default: `<repo>/ckpt/Mega-ASR`) |
+| `--mega-device` | auto | Mega-ASR device map: `cuda:0`, `mps`, `cpu` |
+| `--mega-allow-cpu` | | Allow Mega-ASR on CPU (slow for a 1.7B model) |
+| `--mega-force-lora` | | Mount the LoRA regardless of language (en/zh-tuned only) |
 | `--language`, `-l` | auto-detect | ISO 639-1 code: `fr`, `en`, `es`, ... |
 | `--chunk-duration` | `600` | Chunk size in seconds |
 | `--workers`, `-w` | `2` | Parallel transcription threads |

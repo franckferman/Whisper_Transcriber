@@ -18,6 +18,12 @@
   "openai_api_key": "${OPENAI_API_KEY}",
   "openai_model": "whisper-1",
 
+  "mega_asr_repo_dir": null,
+  "mega_asr_ckpt_dir": null,
+  "mega_asr_device_map": null,
+  "mega_asr_allow_cpu": false,
+  "mega_asr_force_lora": false,
+
   "language": null,
   "chunk_duration_seconds": 600,
   "workers": 2,
