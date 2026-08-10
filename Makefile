@@ -12,6 +12,15 @@ OUTPUT   ?= ./output
 FILE     ?=
 URL      ?=
 
+# Translation (optional; see deps-translate)
+TO       ?=
+FROM     ?=
+IN       ?=
+
+# Mega-ASR (optional; see deps-mega). MEGA_DEVICE empty => CPU (slow, opt-in).
+MEGA_REPO   ?=
+MEGA_DEVICE ?=
+
 # Web bind. Loopback by default -- put a reverse proxy in front to expose it.
 HOST     ?= 127.0.0.1
 PORT     ?= 8000
@@ -31,7 +40,7 @@ venv: ## Create virtual environment only
 
 .PHONY: deps
 deps: venv ## Install core dependencies
-	$(PIP) install --quiet ffmpeg-python tqdm requests yt-dlp pydub
+	$(PIP) install --quiet -r requirements.txt
 
 .PHONY: deps-faster-whisper
 deps-faster-whisper: deps ## Install faster-whisper backend
@@ -41,8 +50,16 @@ deps-faster-whisper: deps ## Install faster-whisper backend
 deps-openai: deps ## Install OpenAI backend
 	$(PIP) install --quiet openai
 
+.PHONY: deps-translate
+deps-translate: deps ## Install local translation (Argos; heavy: pulls torch)
+	$(PIP) install --quiet -r requirements-translate.txt
+
+.PHONY: deps-mega
+deps-mega: deps ## Install Mega-ASR backend (heavy, GPU-oriented)
+	$(PIP) install --quiet -r requirements-mega.txt
+
 .PHONY: deps-all
-deps-all: deps deps-faster-whisper deps-openai ## Install all Python dependencies
+deps-all: deps deps-faster-whisper deps-openai ## Install core + local backends (not the heavy translate/mega extras)
 
 # ── whisper.cpp ───────────────────────────────────────────────────────────────
 
@@ -132,6 +149,47 @@ run-faster-whisper: ## Run with faster_whisper backend
 run-openai: ## Run with OpenAI API backend
 	$(MAKE) run BACKEND=openai
 
+.PHONY: run-mega
+run-mega: ## Run mega_asr (MEGA_REPO=/path FILE=... [MEGA_DEVICE=cuda:0])
+ifndef FILE
+	$(error Specify FILE=path/to/audio.wav)
+endif
+ifndef MEGA_REPO
+	$(error Specify MEGA_REPO=/path/to/Mega-ASR clone -- see 'make deps-mega')
+endif
+	$(PY) main.py --file "$(FILE)" --backend mega_asr --language $(LANGUAGE) \
+	    --mega-repo "$(MEGA_REPO)" \
+	    $(if $(MEGA_DEVICE),--mega-device $(MEGA_DEVICE),--mega-allow-cpu) \
+	    --workers $(WORKERS) --output-dir $(OUTPUT)
+
+# ── Translation (optional; local, offline) ────────────────────────────────────
+
+.PHONY: run-translate
+run-translate: ## Transcribe FILE= then translate to TO= (e.g. make run-translate FILE=talk.mp4 TO=fr)
+ifndef FILE
+	$(error Specify FILE=path/to/video.mp4)
+endif
+ifndef TO
+	$(error Specify TO=<target ISO 639-1 code>, e.g. TO=fr)
+endif
+	$(PY) main.py --file "$(FILE)" --backend $(BACKEND) --language $(LANGUAGE) \
+	    --translate-to $(TO) $(if $(FROM),--translate-from $(FROM),) \
+	    --workers $(WORKERS) --output-dir $(OUTPUT)
+
+.PHONY: translate-text
+translate-text: ## Translate an existing text file (IN=notes.txt FROM=en TO=fr)
+ifndef IN
+	$(error Specify IN=path/to/text.txt)
+endif
+ifndef FROM
+	$(error Specify FROM=<source ISO 639-1 code>, e.g. FROM=en)
+endif
+ifndef TO
+	$(error Specify TO=<target ISO 639-1 code>, e.g. TO=fr)
+endif
+	$(PY) main.py --translate-text "$(IN)" --translate-from $(FROM) --translate-to $(TO) \
+	    --output-dir $(OUTPUT)
+
 # ── Output formats ────────────────────────────────────────────────────────────
 
 .PHONY: run-srt
@@ -160,6 +218,8 @@ check: ## Validate all imports and CLI
 	$(PY) -c "from transcriber.backends.base import TranscriptionBackend; print('backends      OK')"
 	$(PY) -c "from transcriber.managers.transcription import TranscriptionManager; print('manager       OK')"
 	$(PY) -c "from transcriber.formatters.output import OutputFormatter; print('formatter     OK')"
+	$(PY) -c "from transcriber.processors.translate import LocalTranslator; print('translate     OK')"
+	$(PY) -c "from transcriber.backends.mega_asr import MegaAsrBackend; print('mega_asr      OK')"
 	$(PY) main.py --help > /dev/null && echo "CLI           OK"
 
 .PHONY: clean
@@ -198,11 +258,17 @@ help: ## Show this help
 	@echo "    LANGUAGE   $(LANGUAGE)"
 	@echo "    WORKERS    $(WORKERS)"
 	@echo "    OUTPUT     $(OUTPUT)"
+	@echo "    TO / FROM  translation target / source language (ISO 639-1)"
+	@echo "    IN         text file to translate (translate-text)"
+	@echo "    MEGA_REPO  path to a Mega-ASR clone   MEGA_DEVICE  cuda:0 | mps (empty => CPU)"
 	@echo ""
 	@echo "  Examples:"
 	@echo "    make run FILE=video.mp4"
 	@echo "    make run URL=https://youtube.com/... BACKEND=whisper_cpp LANGUAGE=en"
 	@echo "    make run-all-formats FILE=video.mp4"
+	@echo "    make run-translate FILE=talk.mp4 LANGUAGE=en TO=fr"
+	@echo "    make translate-text IN=notes.txt FROM=en TO=fr"
+	@echo "    make run-mega FILE=noisy.wav LANGUAGE=en MEGA_REPO=/path/to/Mega-ASR"
 	@echo "    make dry-run URL=https://..."
 	@echo "    make check"
 	@echo ""
