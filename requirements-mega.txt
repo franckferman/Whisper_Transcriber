@@ -14,8 +14,12 @@
 #     cd Mega-ASR && python scripts/download.py      # fetches ckpt/Mega-ASR
 # then point whispr at it with --mega-repo /path/to/Mega-ASR (and a GPU
 # --mega-device cuda:0, or --mega-allow-cpu to accept slow CPU inference).
+# Note: the Mega-ASR repo pins exact torch/torchaudio versions in its own
+# requirements.txt; that file is authoritative for the wrapper. torchaudio is
+# required by the audio-quality router (MelSpectrogram), not just torch.
 qwen-asr
 torch
+torchaudio
 peft
 safetensors
 soundfile
