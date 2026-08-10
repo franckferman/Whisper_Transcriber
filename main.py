@@ -89,13 +89,13 @@ examples:
     # ---- Backend ----
     parser.add_argument(
         "--backend", "-b",
-        choices=["whisper_cpp", "faster_whisper", "openai"],
+        choices=["whisper_cpp", "faster_whisper", "openai", "mega_asr"],
         metavar="BACKEND",
-        help="Transcription backend: whisper_cpp | faster_whisper | openai (default: whisper_cpp).",
+        help="Transcription backend: whisper_cpp | faster_whisper | openai | mega_asr (default: whisper_cpp).",
     )
     parser.add_argument(
         "--fallback-backend",
-        choices=["whisper_cpp", "faster_whisper", "openai"],
+        choices=["whisper_cpp", "faster_whisper", "openai", "mega_asr"],
         metavar="BACKEND",
         help="Fallback backend if the primary backend fails all retries.",
     )
@@ -131,6 +131,31 @@ examples:
         "--openai-model",
         metavar="MODEL",
         help="OpenAI model name (default: whisper-1).",
+    )
+    parser.add_argument(
+        "--mega-repo",
+        metavar="PATH",
+        help="Path to a local xzf-thu/Mega-ASR clone (provides the MegaASR wrapper).",
+    )
+    parser.add_argument(
+        "--mega-ckpt",
+        metavar="PATH",
+        help="Mega-ASR checkpoint root (default: <mega-repo>/ckpt/Mega-ASR).",
+    )
+    parser.add_argument(
+        "--mega-device",
+        metavar="MAP",
+        help="Mega-ASR device_map: 'cuda:0' | 'mps' | 'cpu' (default: auto).",
+    )
+    parser.add_argument(
+        "--mega-allow-cpu",
+        action="store_true",
+        help="Allow Mega-ASR to run on CPU (slow for a 1.7B model; off by default).",
+    )
+    parser.add_argument(
+        "--mega-force-lora",
+        action="store_true",
+        help="Mount the Mega-ASR LoRA regardless of language (en/zh-tuned only).",
     )
 
     # ---- Processing ----
@@ -312,6 +337,16 @@ def main() -> int:
         overrides["openai_api_key"] = args.openai_key
     if args.openai_model:
         overrides["openai_model"] = args.openai_model
+    if args.mega_repo:
+        overrides["mega_asr_repo_dir"] = args.mega_repo
+    if args.mega_ckpt:
+        overrides["mega_asr_ckpt_dir"] = args.mega_ckpt
+    if args.mega_device:
+        overrides["mega_asr_device_map"] = args.mega_device
+    if args.mega_allow_cpu:
+        overrides["mega_asr_allow_cpu"] = True
+    if args.mega_force_lora:
+        overrides["mega_asr_force_lora"] = True
 
     config.apply_overrides(overrides)
 

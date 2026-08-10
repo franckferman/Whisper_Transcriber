@@ -92,6 +92,13 @@ class TranscriptionConfig:
     openai_api_key: Optional[str] = None
     openai_model: str = "whisper-1"
 
+    # Mega-ASR specific (optional 'mega' extra; robustness LoRA on Qwen3-ASR)
+    mega_asr_repo_dir: Optional[str] = None   # path to a xzf-thu/Mega-ASR clone
+    mega_asr_ckpt_dir: Optional[str] = None   # defaults to <repo>/ckpt/Mega-ASR
+    mega_asr_device_map: Optional[str] = None  # 'cuda:0' | 'mps' | 'cpu' | None
+    mega_asr_allow_cpu: bool = False          # opt-in: 1.7B on CPU is slow
+    mega_asr_force_lora: bool = False         # mount LoRA regardless of language
+
     # Processing
     language: Optional[str] = None
     chunk_duration_seconds: int = 600
@@ -159,7 +166,7 @@ class TranscriptionConfig:
                 f"Expected an ISO 639-1 code such as 'en' or 'fr'."
             )
 
-        valid_backends = {"whisper_cpp", "faster_whisper", "openai"}
+        valid_backends = {"whisper_cpp", "faster_whisper", "openai", "mega_asr"}
         if self.backend not in valid_backends:
             raise ValueError(
                 f"Invalid backend '{self.backend}'. Valid options: {valid_backends}"
@@ -168,6 +175,16 @@ class TranscriptionConfig:
             raise ValueError(
                 f"Invalid fallback_backend '{self.fallback_backend}'. Valid options: {valid_backends}"
             )
+
+        # Fail fast if mega_asr is asked to handle a language Qwen3-ASR cannot.
+        if "mega_asr" in (self.backend, self.fallback_backend) and self.language:
+            from transcriber.backends.mega_asr import MEGA_SUPPORTED_LANGUAGES
+            if self.language not in MEGA_SUPPORTED_LANGUAGES:
+                raise ValueError(
+                    f"Backend 'mega_asr' does not support language "
+                    f"'{self.language}'. Supported languages: "
+                    f"{sorted(MEGA_SUPPORTED_LANGUAGES)}."
+                )
 
         valid_formats = {"txt", "json", "srt", "vtt"}
         for fmt in self.output_formats:

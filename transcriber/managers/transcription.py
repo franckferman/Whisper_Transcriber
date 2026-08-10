@@ -28,6 +28,7 @@ from transcriber.backends.base import TranscriptionBackend, TranscriptionResult
 from transcriber.backends.whisper_cpp import WhisperCppBackend
 from transcriber.backends.faster_whisper import FasterWhisperBackend
 from transcriber.backends.openai_api import OpenAIBackend
+from transcriber.backends.mega_asr import MegaAsrBackend
 from transcriber.config import TranscriptionConfig
 from transcriber.formatters.output import OutputFormatter
 from transcriber.processors.translate import LocalTranslator, TranslationError
@@ -77,6 +78,14 @@ def _make_backend(config: TranscriptionConfig, backend_name: str) -> Transcripti
             max_retries=config.max_retries,
             base_delay=config.retry_base_delay,
             max_delay=config.retry_max_delay,
+        )
+    if backend_name == "mega_asr":
+        return MegaAsrBackend(
+            repo_dir=config.mega_asr_repo_dir,
+            ckpt_dir=config.mega_asr_ckpt_dir,
+            device_map=config.mega_asr_device_map,
+            allow_cpu=config.mega_asr_allow_cpu,
+            force_lora=config.mega_asr_force_lora,
         )
     raise ValueError(f"Unknown backend name: {backend_name!r}")
 
