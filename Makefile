@@ -58,6 +58,10 @@ deps-translate: deps ## Install local translation (Argos; heavy: pulls torch)
 deps-mega: deps ## Install Mega-ASR backend (heavy, GPU-oriented)
 	$(PIP) install --quiet -r requirements-mega.txt
 
+.PHONY: deps-align
+deps-align: deps ## Install premium word-timestamp providers (stable-ts/whisperx)
+	$(PIP) install --quiet -r requirements-align.txt
+
 .PHONY: deps-all
 deps-all: deps deps-faster-whisper deps-openai ## Install core + local backends (not the heavy translate/mega extras)
 
@@ -210,6 +214,15 @@ else
 	$(error Specify FILE=path/to/video.mp4)
 endif
 
+.PHONY: run-words
+run-words: ## Transcribe with per-word timestamps (PROVIDER=native|stable_ts|whisperx)
+ifndef FILE
+	$(error Specify FILE=path/to/video.mp4)
+endif
+	$(PY) main.py --file "$(FILE)" --backend $(BACKEND) --language $(LANGUAGE) \
+	    --word-timestamps $(if $(PROVIDER),--word-timestamps-provider $(PROVIDER),) \
+	    --format json --output-dir $(OUTPUT)
+
 # ── Dev ───────────────────────────────────────────────────────────────────────
 
 .PHONY: check
@@ -219,6 +232,7 @@ check: ## Validate all imports and CLI
 	$(PY) -c "from transcriber.managers.transcription import TranscriptionManager; print('manager       OK')"
 	$(PY) -c "from transcriber.formatters.output import OutputFormatter; print('formatter     OK')"
 	$(PY) -c "from transcriber.processors.translate import LocalTranslator; print('translate     OK')"
+	$(PY) -c "from transcriber.processors import word_timestamps; print('word_timing   OK')"
 	$(PY) -c "from transcriber.backends.mega_asr import MegaAsrBackend; print('mega_asr      OK')"
 	$(PY) main.py --help > /dev/null && echo "CLI           OK"
 

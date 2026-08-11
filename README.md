@@ -22,6 +22,7 @@
 - [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
 - [Translation](#translation)
+- [Word-level timestamps](#word-level-timestamps)
 - [Web Interface](#web-interface)
 - [Makefile Reference](#makefile-reference)
 - [References](#references)
@@ -413,6 +414,8 @@ String values support `${ENV_VAR}` interpolation:
 | `chunk_duration_seconds` | `600` | Duration of each audio chunk in seconds |
 | `workers` | `2` | Number of parallel transcription threads |
 | `temp_dir` | `null` | Temporary directory (system default if null) |
+| `word_timestamps` | `false` | Emit per-word timestamps inside each segment (JSON) |
+| `word_timestamps_provider` | `native` | Word timing source: `native`, `stable_ts`, `whisperx` |
 | `output_formats` | `["txt"]` | Output formats: `txt`, `json`, `srt`, `vtt` |
 | `output_dir` | `.` | Directory where output files are written |
 | `output_prefix` | `transcript` | Filename prefix for output files |
@@ -522,6 +525,8 @@ python main.py --config config.json
 | `--language`, `-l` | auto-detect | ISO 639-1 code: `fr`, `en`, `es`, ... |
 | `--chunk-duration` | `600` | Chunk size in seconds |
 | `--workers`, `-w` | `2` | Parallel transcription threads |
+| `--word-timestamps` | | Emit per-word timestamps inside each segment (JSON) |
+| `--word-timestamps-provider` | `native` | Word timing source: `native`, `stable_ts`, `whisperx` |
 | `--format`, `-F` | `txt` | Output formats, comma-separated: `txt,json,srt,vtt` |
 | `--output-dir`, `-o` | `.` | Output directory |
 | `--output-prefix` | `transcript` | Output filename prefix |
@@ -634,6 +639,37 @@ python main.py --translate-text transcript.txt --translate-from en --translate-t
 - **Graceful when absent.** If `argostranslate` is not installed, a transcription+translation run still writes the transcript and logs a clear warning instead of failing.
 
 > Translation quality is that of the underlying OPUS-MT model for the pair, and is independent of the transcription backend.
+
+---
+
+## Word-level timestamps
+
+By default whispr emits **segment-level** timings. Pass `--word-timestamps` to also get **per-word** timings, stored inside each segment of the JSON output under a `words` list (`{word, start, end, probability}`). It's **opt-in and additive** — without the flag, output is byte-for-byte unchanged; `srt`/`vtt` are untouched either way.
+
+```bash
+python main.py --file talk.mp4 --backend faster_whisper --language en \
+    --word-timestamps --format json
+```
+
+A **provider** selects where the word timing comes from:
+
+| Provider | Source | Deps | Notes |
+|---|---|---|---|
+| `native` *(default)* | the backend's own word timing | none | faster-whisper (`word_timestamps`), whisper.cpp (`--output-json-full`) |
+| `stable_ts` | post-hoc forced alignment (stable-ts) | `requirements-align.txt` | tighter timing than native |
+| `whisperx` | post-hoc forced alignment (whisperX, wav2vec2) | `requirements-align.txt` | highest accuracy, heaviest |
+
+```bash
+# Premium alignment (optional extra: pip install -r requirements-align.txt)
+python main.py --file talk.mp4 --language en \
+    --word-timestamps --word-timestamps-provider stable_ts --format json
+```
+
+- **`native` needs no extra** and is validated end-to-end. It is enough for film / translation subtitle styles.
+- **Premium providers are opt-in and heavy** (they pull `torch`). If the package is absent, whispr logs a warning and keeps the timing it already has — a missing extra never breaks a run. Use them when word timing must land exactly on the syllable (e.g. animated word-by-word captions).
+- **`mega_asr` has no timestamps** (v1) and cannot supply word timing.
+
+> This feeds downstream tooling (e.g. styled/animated subtitle burners) that needs to know exactly when each word is spoken.
 
 ---
 

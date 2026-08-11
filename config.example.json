@@ -29,6 +29,9 @@
   "workers": 2,
   "temp_dir": null,
 
+  "word_timestamps": false,
+  "word_timestamps_provider": "native",
+
   "output_formats": ["txt", "srt"],
   "output_dir": "./output",
   "output_prefix": "transcript",
