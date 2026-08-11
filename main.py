@@ -205,6 +205,25 @@ examples:
         metavar="N",
         help="Number of parallel transcription workers (default: 2).",
     )
+
+    # ---- Word-level timestamps (opt-in, additive) ----
+    parser.add_argument(
+        "--word-timestamps",
+        action="store_true",
+        help=(
+            "Emit per-word timestamps inside each segment (JSON). Off by default; "
+            "adds a 'words' list per segment without changing existing output."
+        ),
+    )
+    parser.add_argument(
+        "--word-timestamps-provider",
+        choices=["native", "stable_ts", "whisperx"],
+        metavar="PROVIDER",
+        help=(
+            "Where word timing comes from: native (backend's own, default), "
+            "stable_ts or whisperx (post-hoc forced alignment, optional extras)."
+        ),
+    )
     parser.add_argument(
         "--temp-dir",
         metavar="DIR",
@@ -307,6 +326,10 @@ def main() -> int:
         overrides["chunk_duration_seconds"] = args.chunk_duration
     if args.workers:
         overrides["workers"] = args.workers
+    if args.word_timestamps:
+        overrides["word_timestamps"] = True
+    if args.word_timestamps_provider:
+        overrides["word_timestamps_provider"] = args.word_timestamps_provider
     if args.temp_dir:
         overrides["temp_dir"] = args.temp_dir
     if output_formats:

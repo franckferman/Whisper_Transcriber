@@ -117,11 +117,18 @@ class FasterWhisperBackend(TranscriptionBackend):
 
         self._load_model()
 
+        want_words = bool(kwargs.get("word_timestamps"))
+
         transcribe_kwargs = {}
         if language:
             transcribe_kwargs["language"] = language
+        if want_words:
+            transcribe_kwargs["word_timestamps"] = True
 
-        logger.debug("faster-whisper transcribing: %s", audio_path)
+        logger.debug(
+            "faster-whisper transcribing: %s (word_timestamps=%s)",
+            audio_path, want_words,
+        )
 
         try:
             segments_iter, info = self._model.transcribe(  # type: ignore[union-attr]
@@ -139,11 +146,25 @@ class FasterWhisperBackend(TranscriptionBackend):
 
         for seg in segments_iter:
             text = seg.text.strip()
-            segments.append({
+            entry = {
                 "start": seg.start,
                 "end": seg.end,
                 "text": text,
-            })
+            }
+            # word_timestamps=True populates seg.words with Word(start, end,
+            # word, probability). Attach them inside the segment (additive).
+            seg_words = getattr(seg, "words", None)
+            if want_words and seg_words:
+                entry["words"] = [
+                    {
+                        "word": w.word,
+                        "start": w.start,
+                        "end": w.end,
+                        "probability": getattr(w, "probability", None),
+                    }
+                    for w in seg_words
+                ]
+            segments.append(entry)
             texts.append(text)
 
         detected_language = getattr(info, "language", None) or language

@@ -33,6 +33,7 @@ from transcriber.config import TranscriptionConfig
 from transcriber.formatters.output import OutputFormatter
 from transcriber.processors.translate import LocalTranslator, TranslationError
 from transcriber.processors.video import VideoProcessor
+from transcriber.processors import word_timestamps as wt
 
 try:
     from tqdm import tqdm as _tqdm
@@ -127,6 +128,13 @@ class TranscriptionManager:
                 else None
             )
 
+        # Native word timestamps: only the backend-driven provider asks the
+        # backend to emit words per chunk. Premium providers align post-merge.
+        self._native_words = bool(
+            config.word_timestamps
+            and wt.requires_backend_words(config.word_timestamps_provider)
+        )
+
         # Track temp directories created by this manager
         self._temp_dirs: List[str] = []
 
@@ -190,6 +198,19 @@ class TranscriptionManager:
             logger.info(
                 "Transcription complete. Total characters: %d", len(merged.text)
             )
+
+            # Premium word-timestamp providers align the merged transcript over
+            # the full audio (the native provider already filled words per chunk).
+            if (
+                self.config.word_timestamps
+                and not wt.requires_backend_words(self.config.word_timestamps_provider)
+            ):
+                merged = wt.align_result(
+                    merged,
+                    local_path,
+                    self.config.word_timestamps_provider,
+                    language=self.config.language or merged.language,
+                )
 
             output_paths = self.formatter.write(merged, self.config.output_formats)
             for path in output_paths:
@@ -437,6 +458,7 @@ class TranscriptionManager:
                 return self._primary_backend.transcribe(
                     audio_path,
                     language=self.config.language,
+                    word_timestamps=self._native_words,
                 )
             except Exception as exc:
                 last_exc = exc
@@ -472,6 +494,7 @@ class TranscriptionManager:
                 return self._fallback_backend.transcribe(
                     audio_path,
                     language=self.config.language,
+                    word_timestamps=self._native_words,
                 )
             except Exception as fb_exc:
                 raise RuntimeError(
@@ -518,6 +541,16 @@ class TranscriptionManager:
                 adjusted = dict(seg)
                 adjusted["start"] = seg.get("start", 0.0) + time_offset
                 adjusted["end"] = seg.get("end", 0.0) + time_offset
+                # Shift nested word timings by the same chunk offset.
+                if seg.get("words"):
+                    adjusted["words"] = [
+                        {
+                            **w,
+                            "start": w.get("start", 0.0) + time_offset,
+                            "end": w.get("end", 0.0) + time_offset,
+                        }
+                        for w in seg["words"]
+                    ]
                 combined_segments.append(adjusted)
 
             if result.language and not detected_language:

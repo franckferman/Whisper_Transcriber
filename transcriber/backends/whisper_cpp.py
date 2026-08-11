@@ -101,11 +101,15 @@ class WhisperCppBackend(TranscriptionBackend):
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_base = str(Path(tmp_dir) / "out")
 
+            want_words = bool(kwargs.get("word_timestamps"))
+
             cmd: List[str] = [
                 self.binary_path,
                 "-m", self.model_path,
                 "-f", audio_path,
-                "--output-json",
+                # --output-json-full adds per-token timestamps, which we group
+                # into words; plain --output-json otherwise.
+                "--output-json-full" if want_words else "--output-json",
                 "-of", output_base,
             ]
 
@@ -143,14 +147,53 @@ class WhisperCppBackend(TranscriptionBackend):
             json_output_path = Path(output_base + ".json")
             if json_output_path.is_file():
                 return self._parse_json_output(
-                    json_output_path, audio_path
+                    json_output_path, audio_path, want_words=want_words
                 )
 
             # Fallback: parse stdout for timestamp lines
             return self._parse_text_output(proc.stdout, audio_path)
 
+    @staticmethod
+    def _tokens_to_words(tokens: List[dict]) -> List[dict]:
+        """
+        Group whisper.cpp per-token entries (from --output-json-full) into words.
+
+        A whisper token that begins with a space starts a new word; special
+        tokens (e.g. '[_BEG_]', '[_TT_..]') are skipped. Each word's start/end
+        come from its first/last token timestamps.
+        """
+        words: List[dict] = []
+        current = None  # {"word": str, "start": float, "end": float}
+
+        for tok in tokens:
+            text = tok.get("text", "")
+            if not text or (text.startswith("[_") and text.endswith("]")):
+                continue
+            offsets = tok.get("offsets") or {}
+            # offsets are in milliseconds; fall back to the timestamps strings
+            if "from" in offsets and "to" in offsets:
+                t0 = offsets["from"] / 1000.0
+                t1 = offsets["to"] / 1000.0
+            else:
+                ts = tok.get("timestamps") or {}
+                t0 = _ts_to_seconds(ts.get("from", "00:00:00.000"))
+                t1 = _ts_to_seconds(ts.get("to", "00:00:00.000"))
+
+            starts_word = text.startswith(" ") or current is None
+            if starts_word:
+                if current is not None:
+                    words.append(current)
+                current = {"word": text.strip(), "start": t0, "end": t1}
+            else:
+                current["word"] += text
+                current["end"] = t1
+
+        if current is not None and current["word"]:
+            words.append(current)
+        return words
+
     def _parse_json_output(
-        self, json_path: Path, source_file: str
+        self, json_path: Path, source_file: str, want_words: bool = False
     ) -> TranscriptionResult:
         """Parse whisper.cpp's JSON output file."""
         with json_path.open("r", encoding="utf-8") as fh:
@@ -161,16 +204,22 @@ class WhisperCppBackend(TranscriptionBackend):
         detected_language = None
 
         # whisper.cpp JSON schema: {"transcription": [{"timestamps": {...}, "text": "..."}]}
+        # With --output-json-full each item also carries a "tokens" list.
         for item in data.get("transcription", []):
             text = item.get("text", "").strip()
             ts = item.get("timestamps", {})
             start_str = ts.get("from", "00:00:00.000")
             end_str = ts.get("to", "00:00:00.000")
-            segments.append({
+            entry = {
                 "start": _ts_to_seconds(start_str),
                 "end": _ts_to_seconds(end_str),
                 "text": text,
-            })
+            }
+            if want_words and item.get("tokens"):
+                seg_words = self._tokens_to_words(item["tokens"])
+                if seg_words:
+                    entry["words"] = seg_words
+            segments.append(entry)
             texts.append(text)
 
         # Some versions expose the detected language at top level

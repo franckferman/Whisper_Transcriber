@@ -105,6 +105,13 @@ class TranscriptionConfig:
     workers: int = 2
     temp_dir: Optional[str] = None
 
+    # Word-level timestamps (opt-in, additive). Provider selects the source:
+    #   'native'    -- the backend's own word timing (faster_whisper / whisper.cpp)
+    #   'stable_ts' -- post-hoc forced alignment via stable-ts (optional extra)
+    #   'whisperx'  -- post-hoc forced alignment via whisperX (optional extra)
+    word_timestamps: bool = False
+    word_timestamps_provider: str = "native"
+
     # Output
     output_formats: List[str] = field(default_factory=lambda: ["txt"])
     output_dir: str = "."
@@ -192,6 +199,14 @@ class TranscriptionConfig:
                 raise ValueError(
                     f"Invalid output format '{fmt}'. Valid options: {valid_formats}"
                 )
+
+        valid_wt_providers = {"native", "stable_ts", "whisperx"}
+        if self.word_timestamps_provider not in valid_wt_providers:
+            raise ValueError(
+                f"Invalid word_timestamps_provider "
+                f"'{self.word_timestamps_provider}'. Valid options: "
+                f"{sorted(valid_wt_providers)}."
+            )
 
         if self.workers < 1:
             raise ValueError("'workers' must be >= 1.")
