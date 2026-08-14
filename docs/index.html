@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>whispr</title>
-<meta name="description" content="Modular multi-backend Whisper transcription — CLI and web UI. faster-whisper, whisper.cpp, OpenAI API. Parallel chunk processing, automatic fallback, SRT/VTT/JSON output.">
+<meta name="description" content="Modular multi-backend Whisper transcription — CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, and Mega-ASR for noisy audio. Parallel chunk processing, automatic fallback, local translation, word-level timestamps, SRT/VTT/JSON output.">
 <meta property="og:title" content="whispr">
-<meta property="og:description" content="Modular multi-backend Whisper transcription — CLI and web UI. faster-whisper, whisper.cpp, OpenAI API.">
+<meta property="og:description" content="Modular multi-backend Whisper transcription — CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, Mega-ASR. Local translation and word timestamps.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://franckferman.github.io/whispr/">
 <style>
@@ -353,6 +353,7 @@ footer a:hover { color: var(--muted); }
       <button class="backend-pill hi" onclick="setBackend(0)">faster-whisper</button>
       <button class="backend-pill"    onclick="setBackend(1)">whisper.cpp</button>
       <button class="backend-pill"    onclick="setBackend(2)">openai api</button>
+      <button class="backend-pill"    onclick="setBackend(3)">mega-asr</button>
     </div>
   </div>
 
@@ -361,7 +362,8 @@ footer a:hover { color: var(--muted); }
     <span class="feat">Auto fallback</span>
     <span class="feat">TXT &middot; SRT &middot; VTT &middot; JSON</span>
     <span class="feat">YouTube + HTTP URLs</span>
-    <span class="feat">GPU / CPU / Cloud</span>
+    <span class="feat">Local translation</span>
+    <span class="feat">Word timestamps</span>
   </div>
 
   <div class="scenario-block">
@@ -435,8 +437,8 @@ const S = [
   },
 ];
 
-const BACKENDS = ['faster_whisper', 'whisper_cpp', 'openai'];
-const BACKEND_LABELS = ['faster-whisper', 'whisper.cpp', 'openai api'];
+const BACKENDS = ['faster_whisper', 'whisper_cpp', 'openai', 'mega_asr'];
+const BACKEND_LABELS = ['faster-whisper', 'whisper.cpp', 'openai api', 'mega-asr'];
 let cur = 0;
 let curBackend = 0;
 
@@ -452,17 +454,22 @@ function buildCmd(i) {
   if (i === 4) return S[4];
   const b = BACKENDS[curBackend];
   const bl = BACKEND_LABELS[curBackend];
+  const mega = b === 'mega_asr';
+  const megaFlags = ` <span class="flag">--mega-repo</span> <span class="str">./Mega-ASR</span> <span class="flag">--mega-allow-cpu</span>`;
   if (i === 1) {
+    const src = mega ? 'noisy.wav' : 'lecture.mp4';
     return {
-      raw:  `python main.py -f lecture.mp4 --backend ${b} -F txt,srt,vtt`,
-      html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">lecture.mp4</span> <span class="flag">--backend</span> <span class="kw">${b}</span> <span class="flag">-F</span> <span class="str">txt,srt,vtt</span>`,
-      desc: `Transcribe a local file with <span class="hl">${bl}</span>${b==='faster_whisper'?' (CTranslate2, GPU/CPU)':b==='whisper_cpp'?' (GGML, CPU-optimized)':' (OpenAI API, no local model)'}. Outputs <span class="hl">plain text</span>, <span class="hl">SRT</span>, and <span class="hl">WebVTT</span> subtitles. Supports MP3, MP4, WAV, MKV, FLAC, and any ffmpeg-compatible format.`,
+      raw:  `python main.py -f ${src} --backend ${b}${mega ? ' --mega-repo ./Mega-ASR --mega-allow-cpu' : ''} -F txt,srt,vtt`,
+      html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">${src}</span> <span class="flag">--backend</span> <span class="kw">${b}</span>${mega ? megaFlags : ''} <span class="flag">-F</span> <span class="str">txt,srt,vtt</span>`,
+      desc: mega
+        ? `Transcribe with <span class="hl">Mega-ASR</span> (Qwen3-ASR + a robustness LoRA), tuned to stay accurate on <span class="hl">noisy or degraded audio</span> — best for English and Chinese. Point <span class="hl">--mega-repo</span> at a local clone; a GPU is recommended.`
+        : `Transcribe a local file with <span class="hl">${bl}</span>${b==='faster_whisper'?' (CTranslate2, GPU/CPU)':b==='whisper_cpp'?' (GGML, CPU-optimized)':' (OpenAI API, no local model)'}. Outputs <span class="hl">plain text</span>, <span class="hl">SRT</span>, and <span class="hl">WebVTT</span> subtitles. Supports MP3, MP4, WAV, MKV, FLAC, and any ffmpeg-compatible format.`,
     };
   }
   if (i === 2) {
     return {
-      raw:  `python main.py -u "https://youtu.be/dQw4w9WgXcQ" --backend ${b} -l en -F srt`,
-      html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-u</span> <span class="str">"https://youtu.be/dQw4w9WgXcQ"</span> <span class="flag">--backend</span> <span class="kw">${b}</span> <span class="flag">-l</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
+      raw:  `python main.py -u "https://youtu.be/dQw4w9WgXcQ" --backend ${b}${mega ? ' --mega-repo ./Mega-ASR --mega-allow-cpu' : ''} -l en -F srt`,
+      html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-u</span> <span class="str">"https://youtu.be/dQw4w9WgXcQ"</span> <span class="flag">--backend</span> <span class="kw">${b}</span>${mega ? megaFlags : ''} <span class="flag">-l</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
       desc: `Transcribe a <span class="hl">YouTube URL</span> (or any HTTP URL) via yt-dlp. Audio is extracted, chunked with ffmpeg, transcribed in parallel, and output as <span class="hl">SRT subtitles</span>. Language auto-detected if <span class="hl">-l</span> is omitted.`,
     };
   }
