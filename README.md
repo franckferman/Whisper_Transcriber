@@ -32,7 +32,7 @@
 
 ## Overview
 
-whispr is a transcription pipeline built around OpenAI's Whisper model. It supports three interchangeable backends, parallel chunk processing, automatic fallback, and multiple output formats.
+whispr is a transcription pipeline built around OpenAI's Whisper model. It supports four backends — three interchangeable general-purpose ones plus an optional Mega-ASR specialist for degraded audio — parallel chunk processing, automatic fallback, and multiple output formats.
 
 Two interfaces ship with the same codebase:
 
@@ -43,7 +43,7 @@ Two interfaces ship with the same codebase:
 
 | Area | Details |
 |---|---|
-| **Backends** | whisper.cpp (GGML subprocess), faster-whisper (CTranslate2), OpenAI Whisper API |
+| **Backends** | whisper.cpp (GGML subprocess), faster-whisper (CTranslate2), OpenAI Whisper API, and an optional Mega-ASR backend for degraded audio |
 | **Input** | Local files, YouTube URLs (yt-dlp), direct HTTP URLs |
 | **Input formats** | MP3, MP4, WAV, M4A, MKV, WEBM, OGG, FLAC, AVI, MOV, and any format supported by ffmpeg |
 | **Output formats** | Plain text, JSON (with segments and timestamps), SRT subtitles, WebVTT subtitles |
@@ -117,7 +117,7 @@ Speed is relative to `large-v2` on CPU. All sizes share the same architecture an
 
 ## Backends
 
-The three backends execute Whisper inference through different runtimes, model formats, and compute environments. Transcription quality is identical for the same model size.
+The three general-purpose backends execute Whisper inference through different runtimes, model formats, and compute environments. Transcription quality is identical for the same model size.
 
 ### OpenAI API (`openai`)
 
@@ -395,7 +395,7 @@ String values support `${ENV_VAR}` interpolation:
 
 | Field | Default | Description |
 |---|---|---|
-| `backend` | `faster_whisper` | Primary backend: `faster_whisper`, `whisper_cpp`, `openai` |
+| `backend` | `faster_whisper` | Primary backend: `faster_whisper`, `whisper_cpp`, `openai`, `mega_asr` |
 | `fallback_backend` | `null` | Secondary backend used if primary exhausts all retries |
 | `faster_whisper_model` | `base` | Model size: `tiny`, `base`, `small`, `medium`, `large-v2` |
 | `faster_whisper_device` | `cpu` | Compute device: `cpu` or `cuda` |
@@ -510,13 +510,14 @@ python main.py --config config.json
 | `--file`, `-f` | | Local audio/video file |
 | `--url`, `-u` | | YouTube URL or direct HTTP link |
 | `--config`, `-c` | | JSON config file (CLI flags override) |
-| `--backend`, `-b` | `faster_whisper` | `whisper_cpp` \| `faster_whisper` \| `openai` |
+| `--backend`, `-b` | `faster_whisper` | `whisper_cpp` \| `faster_whisper` \| `openai` \| `mega_asr` |
 | `--fallback-backend` | | Secondary backend if primary fails all retries |
 | `--whisper-binary` | `whisper` | Path to the whisper.cpp binary |
 | `--whisper-model` | | Path to the GGML `.bin` model file |
 | `--fw-model` | `base` | faster-whisper model size |
 | `--fw-device` | `cpu` | faster-whisper device: `cpu` \| `cuda` |
 | `--openai-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-model` | `whisper-1` | OpenAI model identifier |
 | `--mega-repo` | | Path to a local xzf-thu/Mega-ASR clone |
 | `--mega-ckpt` | | Mega-ASR checkpoint root (default: `<repo>/ckpt/Mega-ASR`) |
 | `--mega-device` | auto | Mega-ASR device map: `cuda:0`, `mps`, `cpu` |
@@ -525,6 +526,7 @@ python main.py --config config.json
 | `--language`, `-l` | auto-detect | ISO 639-1 code: `fr`, `en`, `es`, ... |
 | `--chunk-duration` | `600` | Chunk size in seconds |
 | `--workers`, `-w` | `2` | Parallel transcription threads |
+| `--temp-dir` | | Directory for temporary files (OS default if unset) |
 | `--word-timestamps` | | Emit per-word timestamps inside each segment (JSON) |
 | `--word-timestamps-provider` | `native` | Word timing source: `native`, `stable_ts`, `whisperx` |
 | `--format`, `-F` | `txt` | Output formats, comma-separated: `txt,json,srt,vtt` |
@@ -660,13 +662,13 @@ A **provider** selects where the word timing comes from:
 | `whisperx` | post-hoc forced alignment (whisperX, wav2vec2) | `requirements-align.txt` | highest accuracy, heaviest |
 
 ```bash
-# Premium alignment (optional extra: pip install -r requirements-align.txt)
+# Higher-accuracy alignment (optional extra: pip install -r requirements-align.txt)
 python main.py --file talk.mp4 --language en \
     --word-timestamps --word-timestamps-provider stable_ts --format json
 ```
 
 - **`native` needs no extra** and is validated end-to-end. It is enough for film / translation subtitle styles.
-- **Premium providers are opt-in and heavy** (they pull `torch`). If the package is absent, whispr logs a warning and keeps the timing it already has — a missing extra never breaks a run. Use them when word timing must land exactly on the syllable (e.g. animated word-by-word captions).
+- **The `stable_ts` and `whisperx` providers are opt-in and heavy** (they pull `torch`). If the package is absent, whispr logs a warning and keeps the timing it already has — a missing extra never breaks a run. Use them when word timing must land exactly on the syllable (e.g. animated word-by-word captions).
 - **`mega_asr` has no timestamps** (v1) and cannot supply word timing.
 
 > This feeds downstream tooling (e.g. styled/animated subtitle burners) that needs to know exactly when each word is spoken.
