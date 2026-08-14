@@ -23,7 +23,7 @@ class TranscriptionResult:
 
     text: str
     language: Optional[str] = None
-    # List of segment dicts with keys: start, end, text
+    # List of segment dicts with keys: start, end, text (optionally 'words')
     segments: List[dict] = field(default_factory=list)
     # Source chunk file path
     source_file: Optional[str] = None

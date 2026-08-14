@@ -14,7 +14,7 @@ Version     : 2.0.0
 
 Usage examples:
     python main.py --config config.json
-    python main.py --url https://youtube.com/watch?v=... --backend whisper_cpp --chunks 4 --language fr
+    python main.py --url https://youtube.com/watch?v=... --backend whisper_cpp --workers 4 --language fr
     python main.py --file video.mp4 --backend faster_whisper --workers 2
     python main.py --file audio.wav --backend openai
     python main.py --dry-run --url https://... --backend whisper_cpp
@@ -91,7 +91,7 @@ examples:
         "--backend", "-b",
         choices=["whisper_cpp", "faster_whisper", "openai", "mega_asr"],
         metavar="BACKEND",
-        help="Transcription backend: whisper_cpp | faster_whisper | openai | mega_asr (default: whisper_cpp).",
+        help="Transcription backend: whisper_cpp | faster_whisper | openai | mega_asr (default: faster_whisper).",
     )
     parser.add_argument(
         "--fallback-backend",
@@ -322,9 +322,9 @@ def main() -> int:
         overrides["fallback_backend"] = args.fallback_backend
     if args.language:
         overrides["language"] = args.language
-    if args.chunk_duration:
+    if args.chunk_duration is not None:
         overrides["chunk_duration_seconds"] = args.chunk_duration
-    if args.workers:
+    if args.workers is not None:
         overrides["workers"] = args.workers
     if args.word_timestamps:
         overrides["word_timestamps"] = True

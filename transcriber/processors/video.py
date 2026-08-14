@@ -6,8 +6,8 @@ Video Processor Module
 
 Description:
 Handles downloading video/audio from local files, YouTube URLs, and generic
-HTTP URLs. Also handles chunking/splitting long media into fixed-duration
-segments. Reuses and extends the audio splitting logic from audio_splitter repo.
+HTTP URLs, and splits long media into fixed-duration chunks for parallel
+transcription.
 
 Created By  : Franck FERMAN
 Version     : 2.0.0

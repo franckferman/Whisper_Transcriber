@@ -52,7 +52,7 @@ def _make_backend(config: TranscriptionConfig, backend_name: str) -> Transcripti
 
     Args:
         config:       Active TranscriptionConfig.
-        backend_name: One of 'whisper_cpp', 'faster_whisper', 'openai'.
+        backend_name: One of 'whisper_cpp', 'faster_whisper', 'openai', 'mega_asr'.
 
     Returns:
         Configured TranscriptionBackend instance.
@@ -350,7 +350,7 @@ class TranscriptionManager:
         self._temp_dirs.append(chunks_dir)
 
         # Chunks come out as 16 kHz mono WAV regardless of backend -- that's what
-        # whisper.cpp needs and what faster-whisper/openai happily accept.
+        # whisper.cpp requires, and faster-whisper/openai accept it too.
         chunks = self.video_processor.split_into_chunks(
             input_file=local_path,
             chunk_duration=self.config.chunk_duration_seconds,
