@@ -79,100 +79,109 @@ examples:
         ),
     )
 
-    # ---- Config file ----
     parser.add_argument(
         "--config", "-c",
         metavar="FILE",
         help="Path to a JSON configuration file. CLI arguments override config file values.",
     )
 
-    # ---- Backend ----
-    parser.add_argument(
+    backend = parser.add_argument_group("backend")
+    backend.add_argument(
         "--backend", "-b",
         choices=["whisper_cpp", "faster_whisper", "openai", "mega_asr"],
         metavar="BACKEND",
         help="Transcription backend: whisper_cpp | faster_whisper | openai | mega_asr (default: faster_whisper).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--fallback-backend",
         choices=["whisper_cpp", "faster_whisper", "openai", "mega_asr"],
         metavar="BACKEND",
         help="Fallback backend if the primary backend fails all retries.",
     )
-
-    # ---- Backend-specific ----
-    parser.add_argument(
+    backend.add_argument(
         "--whisper-binary",
         metavar="PATH",
         help="Path to the whisper.cpp binary (default: 'whisper').",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--whisper-model",
         metavar="PATH",
         help="Path to the GGML model file for whisper.cpp.",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--fw-model",
         metavar="NAME",
         help="faster-whisper model size (tiny/base/small/medium/large-v2, default: base).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--fw-device",
         choices=["cpu", "cuda"],
         metavar="DEVICE",
         help="faster-whisper inference device (cpu or cuda, default: cpu).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--openai-key",
         metavar="KEY",
         help="OpenAI API key (can also be set via OPENAI_API_KEY env var).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--openai-model",
         metavar="MODEL",
         help="OpenAI model name (default: whisper-1).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--mega-repo",
         metavar="PATH",
         help="Path to a local xzf-thu/Mega-ASR clone (provides the MegaASR wrapper).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--mega-ckpt",
         metavar="PATH",
         help="Mega-ASR checkpoint root (default: <mega-repo>/ckpt/Mega-ASR).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--mega-device",
         metavar="MAP",
         help="Mega-ASR device_map: 'cuda:0' | 'mps' | 'cpu' (default: auto).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--mega-allow-cpu",
         action="store_true",
         help="Allow Mega-ASR to run on CPU (slow for a 1.7B model; off by default).",
     )
-    parser.add_argument(
+    backend.add_argument(
         "--mega-force-lora",
         action="store_true",
         help="Mount the Mega-ASR LoRA regardless of language (en/zh-tuned only).",
     )
 
-    # ---- Processing ----
-    parser.add_argument(
+    processing = parser.add_argument_group("processing")
+    processing.add_argument(
         "--language", "-l",
         metavar="LANG",
         help="ISO 639-1 language code (e.g. 'fr', 'en'). Auto-detect if omitted.",
     )
-    parser.add_argument(
+    processing.add_argument(
         "--chunk-duration",
         type=int,
         metavar="SECONDS",
         help="Duration of each audio chunk in seconds (default: 600).",
     )
+    processing.add_argument(
+        "--workers", "-w",
+        type=int,
+        metavar="N",
+        help="Number of parallel transcription workers (default: 2).",
+    )
+    processing.add_argument(
+        "--temp-dir",
+        metavar="DIR",
+        help="Directory for temporary files (default: OS temp dir).",
+    )
 
-    # ---- Translation (fully local, optional 'argostranslate' extra) ----
-    parser.add_argument(
+    translation = parser.add_argument_group(
+        "translation (local, optional 'argostranslate' extra)")
+    translation.add_argument(
         "--translate-to",
         metavar="LANG",
         help=(
@@ -181,7 +190,7 @@ examples:
             "'{prefix}.{LANG}.{fmt}' copy is written."
         ),
     )
-    parser.add_argument(
+    translation.add_argument(
         "--translate-from",
         metavar="LANG",
         help=(
@@ -189,25 +198,19 @@ examples:
             "--language value; required with --translate-text."
         ),
     )
-    parser.add_argument(
+    translation.add_argument(
         "--translate-model",
         metavar="PATH",
         help="Path to a local .argosmodel package for fully offline translation.",
     )
-    parser.add_argument(
+    translation.add_argument(
         "--no-translate-download",
         action="store_true",
         help="Never download translation models; use only locally installed ones.",
     )
-    parser.add_argument(
-        "--workers", "-w",
-        type=int,
-        metavar="N",
-        help="Number of parallel transcription workers (default: 2).",
-    )
 
-    # ---- Word-level timestamps (opt-in, additive) ----
-    parser.add_argument(
+    words = parser.add_argument_group("word-level timestamps (opt-in, additive)")
+    words.add_argument(
         "--word-timestamps",
         action="store_true",
         help=(
@@ -215,7 +218,7 @@ examples:
             "adds a 'words' list per segment without changing existing output."
         ),
     )
-    parser.add_argument(
+    words.add_argument(
         "--word-timestamps-provider",
         choices=["native", "stable_ts", "whisperx"],
         metavar="PROVIDER",
@@ -224,14 +227,9 @@ examples:
             "stable_ts or whisperx (post-hoc forced alignment, optional extras)."
         ),
     )
-    parser.add_argument(
-        "--temp-dir",
-        metavar="DIR",
-        help="Directory for temporary files (default: OS temp dir).",
-    )
 
-    # ---- Output ----
-    parser.add_argument(
+    output = parser.add_argument_group("output")
+    output.add_argument(
         "--format", "-F",
         dest="output_format",
         metavar="FMT",
@@ -240,26 +238,23 @@ examples:
             "(default: txt). Example: --format txt,srt"
         ),
     )
-    parser.add_argument(
+    output.add_argument(
         "--output-dir", "-o",
         metavar="DIR",
         help="Directory where output files are written (default: current directory).",
     )
-    parser.add_argument(
+    output.add_argument(
         "--output-prefix",
         metavar="PREFIX",
         help="Base filename prefix for output files (default: transcript).",
     )
-
-    # ---- Retry ----
-    parser.add_argument(
+    output.add_argument(
         "--max-retries",
         type=int,
         metavar="N",
         help="Maximum retry attempts per chunk on backend failure (default: 3).",
     )
 
-    # ---- Misc ----
     parser.add_argument(
         "--dry-run",
         action="store_true",
