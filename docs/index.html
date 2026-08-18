@@ -372,7 +372,8 @@ footer a:hover { color: var(--muted); }
       <button class="tab"        onclick="setTab(1)"><span class="kbd">2</span> file</button>
       <button class="tab"        onclick="setTab(2)"><span class="kbd">3</span> url</button>
       <button class="tab"        onclick="setTab(3)"><span class="kbd">4</span> web ui</button>
-      <button class="tab"        onclick="setTab(4)"><span class="kbd">5</span> translate</button>
+      <button class="tab"        onclick="setTab(4)"><span class="kbd">5</span> cloud</button>
+      <button class="tab"        onclick="setTab(5)"><span class="kbd">6</span> translate</button>
     </div>
 
     <div class="terminal">
@@ -392,7 +393,7 @@ footer a:hover { color: var(--muted); }
 
     <div class="actions">
       <button class="copy-btn" id="copy-btn" onclick="copyCmd()">Copy</button>
-      <span class="kbd-hint">switch &nbsp;<kbd onclick="setTab(0)">1</kbd><kbd onclick="setTab(1)">2</kbd><kbd onclick="setTab(2)">3</kbd><kbd onclick="setTab(3)">4</kbd><kbd onclick="setTab(4)">5</kbd></span>
+      <span class="kbd-hint">switch &nbsp;<kbd onclick="setTab(0)">1</kbd><kbd onclick="setTab(1)">2</kbd><kbd onclick="setTab(2)">3</kbd><kbd onclick="setTab(3)">4</kbd><kbd onclick="setTab(4)">5</kbd><kbd onclick="setTab(5)">6</kbd></span>
     </div>
   </div>
 
@@ -431,6 +432,11 @@ const S = [
     desc: `Launch the <span class="hl">FastAPI web UI</span>. Upload a file or paste a URL, pick a backend, monitor progress via <span class="hl">WebSocket</span> live logs, and download results in any format directly from the browser. Binds to <span class="hl">localhost</span>; put it behind a reverse proxy with <span class="hl">WHISPR_AUTH_TOKEN</span> to expose it.`,
   },
   {
+    raw:  `python main.py -f interview.mp3 --backend openai --openai-key $OPENAI_API_KEY -F srt,txt`,
+    html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">interview.mp3</span> <span class="flag">--backend</span> <span class="kw">openai</span> <span class="flag">--openai-key</span> <span class="env">$OPENAI_API_KEY</span> <span class="flag">-F</span> <span class="str">srt,txt</span>`,
+    desc: `Cloud transcription via <span class="hl">OpenAI Whisper API</span>. No local model. Files &gt; 25 MB are chunked automatically. Rate-limit handling with <span class="hl">Retry-After</span> backoff. Falls back to a local backend on failure if <span class="hl">--fallback-backend</span> is set.`,
+  },
+  {
     raw:  `python main.py -f talk.mp4 -l fr --translate-to en -F srt`,
     html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">talk.mp4</span> <span class="flag">-l</span> <span class="str">fr</span> <span class="flag">--translate-to</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
     desc: `Transcribe, then <span class="hl">translate the transcript locally</span> (Argos, fully offline — no online API). The original is kept and a <span class="hl">{prefix}.en.srt</span> copy is written — e.g. a French talk with English subtitles.`,
@@ -452,6 +458,7 @@ function buildCmd(i) {
   if (i === 0) return S[0];
   if (i === 3) return S[3];
   if (i === 4) return S[4];
+  if (i === 5) return S[5];
   const b = BACKENDS[curBackend];
   const bl = BACKEND_LABELS[curBackend];
   const mega = b === 'mega_asr';
