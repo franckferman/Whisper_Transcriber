@@ -11,4 +11,4 @@
 # Language models are installed on first use (downloaded once from the Argos
 # index, or provided offline via --translate-model / translate_package_path),
 # then all translation runs on-device with no online service.
-argostranslate>=1.9,<2
+argostranslate>=1.11.0,<2
