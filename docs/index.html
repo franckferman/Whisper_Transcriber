@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>whispr</title>
-<meta name="description" content="Modular multi-backend Whisper transcription — CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, and Mega-ASR for noisy audio. Parallel chunk processing, automatic fallback, local translation, word-level timestamps, SRT/VTT/JSON output.">
+<meta name="description" content="Modular multi-backend Whisper transcription: CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, and Mega-ASR for noisy audio. Parallel chunk processing, automatic fallback, local translation, word-level timestamps, SRT/VTT/JSON output.">
 <meta property="og:title" content="whispr">
-<meta property="og:description" content="Modular multi-backend Whisper transcription — CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, Mega-ASR. Local translation and word timestamps.">
+<meta property="og:description" content="Modular multi-backend Whisper transcription: CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, Mega-ASR. Local translation and word timestamps.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://franckferman.github.io/whispr/">
 <style>
@@ -411,8 +411,8 @@ footer a:hover { color: var(--muted); }
 <script>
 const S = [
   {
-    raw:  `git clone git@github.com:franckferman/whispr.git && cd whispr && bash install.sh`,
-    html: `<span class="cmd">git</span> <span class="kw">clone</span> <span class="str">git@github.com:franckferman/whispr.git</span> <span class="op">&amp;&amp;</span> <span class="cmd">cd</span> <span class="str">whispr</span> <span class="op">&amp;&amp;</span> <span class="cmd">bash</span> <span class="str">install.sh</span>`,
+    raw:  `git clone https://github.com/franckferman/whispr.git && cd whispr && bash install.sh`,
+    html: `<span class="cmd">git</span> <span class="kw">clone</span> <span class="str">https://github.com/franckferman/whispr.git</span> <span class="op">&amp;&amp;</span> <span class="cmd">cd</span> <span class="str">whispr</span> <span class="op">&amp;&amp;</span> <span class="cmd">bash</span> <span class="str">install.sh</span>`,
     desc: `Interactive installer. Detects <span class="hl">Python</span> and <span class="hl">ffmpeg</span>, sets up a venv, and lets you choose backends (<span class="hl">faster-whisper</span>, <span class="hl">whisper.cpp</span>, <span class="hl">OpenAI</span>) and interfaces (CLI / Web UI).`,
   },
   {
@@ -438,7 +438,7 @@ const S = [
   {
     raw:  `python main.py -f talk.mp4 -l fr --translate-to en -F srt`,
     html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">talk.mp4</span> <span class="flag">-l</span> <span class="str">fr</span> <span class="flag">--translate-to</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
-    desc: `Transcribe, then <span class="hl">translate the transcript locally</span> (Argos, fully offline — no online API). The original is kept and a <span class="hl">{prefix}.en.srt</span> copy is written — e.g. a French talk with English subtitles.`,
+    desc: `Transcribe, then <span class="hl">translate the transcript locally</span> (Argos, fully offline, no online API). The original is kept and a <span class="hl">{prefix}.en.srt</span> copy is written, e.g. a French talk with English subtitles.`,
   },
 ];
 
@@ -468,7 +468,7 @@ function buildCmd(i) {
       raw:  `python main.py -f ${src} --backend ${b}${mega ? ' --mega-repo ./Mega-ASR --mega-allow-cpu' : ''} -F txt,srt,vtt`,
       html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">${src}</span> <span class="flag">--backend</span> <span class="kw">${b}</span>${mega ? megaFlags : ''} <span class="flag">-F</span> <span class="str">txt,srt,vtt</span>`,
       desc: mega
-        ? `Transcribe with <span class="hl">Mega-ASR</span> (Qwen3-ASR + a robustness LoRA), tuned to stay accurate on <span class="hl">noisy or degraded audio</span> — best for English and Chinese. Point <span class="hl">--mega-repo</span> at a local clone; a GPU is recommended.`
+        ? `Transcribe with <span class="hl">Mega-ASR</span> (Qwen3-ASR + a robustness LoRA), tuned to stay accurate on <span class="hl">noisy or degraded audio</span>, best for English and Chinese. Point <span class="hl">--mega-repo</span> at a local clone; a GPU is recommended.`
         : `Transcribe a local file with <span class="hl">${bl}</span>${b==='faster_whisper'?' (CTranslate2, GPU/CPU)':b==='whisper_cpp'?' (GGML, CPU-optimized)':' (OpenAI API, no local model)'}. Outputs <span class="hl">plain text</span>, <span class="hl">SRT</span>, and <span class="hl">WebVTT</span> subtitles. Supports MP3, MP4, WAV, MKV, FLAC, and any ffmpeg-compatible format.`,
     };
   }

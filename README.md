@@ -630,11 +630,16 @@ server detected and cannot be set from the browser.
 ## Makefile Reference
 
 ```bash
+make help                 # List all targets and variables
 make install              # Full setup via install.sh
+make venv                 # Create the virtualenv only
 make deps                 # Core Python deps only
 make deps-faster-whisper  # + faster-whisper
 make deps-openai          # + openai
-make deps-all             # All Python deps
+make deps-all             # Core + faster-whisper + openai (not the heavy extras)
+make deps-translate       # + local translation (Argos; heavy, pulls torch)
+make deps-align           # + premium word-timestamp providers (stable-ts / whisperx)
+make deps-mega            # + Mega-ASR backend (heavy, GPU-oriented)
 
 make whisper-cpp-build    # Clone and compile whisper.cpp
 make whisper-cpp-model    # Download model (WHISPER_MODEL=base|tiny|small|medium|large-v2)
@@ -643,13 +648,18 @@ make whisper-cpp-setup    # Build + model in one step
 make run FILE=video.mp4                         # Transcribe (faster_whisper, fr by default)
 make run URL=https://...                        # Transcribe a URL
 make run FILE=video.mp4 BACKEND=whisper_cpp     # Specific backend
-make run FILE=video.mp4 LANGUAGE=en WORKERS=4  # Override defaults
+make run FILE=video.mp4 LANGUAGE=en WORKERS=4   # Override defaults
 make run-whisper-cpp FILE=video.mp4
 make run-faster-whisper FILE=video.mp4
 make run-openai FILE=video.mp4
+make run-mega FILE=audio.wav MEGA_REPO=/path/to/Mega-ASR   # add MEGA_DEVICE=cuda:0
 
 make run-srt FILE=video.mp4                     # SRT output only
 make run-all-formats FILE=video.mp4             # txt + json + srt + vtt
+make run-words FILE=talk.mp4                    # Per-word timestamps (PROVIDER=native|stable_ts|whisperx)
+
+make run-translate FILE=talk.mp4 TO=fr          # Transcribe, then translate to TO=
+make translate-text IN=notes.txt FROM=en TO=fr  # Translate an existing text file
 
 make dry-run FILE=video.mp4                     # Preview without executing
 make run-config                                 # Use config.json
