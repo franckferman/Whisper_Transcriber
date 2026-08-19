@@ -14,8 +14,9 @@ dist/
 .coverage
 htmlcov/
 
-# Type checkers
+# Type checkers and linters
 .mypy_cache/
+.ruff_cache/
 
 # Editors
 .vscode/
