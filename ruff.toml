@@ -1,0 +1,14 @@
+# Correctness-focused lint. Deliberately conservative so it stays green and
+# meaningful: real bugs (pyflakes F), syntax (E9), import/statement hygiene
+# (E4/E7), and whitespace warnings (W). No line-length (E501) and no pyupgrade
+# (UP) rules, since the project targets Python 3.9 where `X | None` runtime
+# annotations are invalid.
+target-version = "py39"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "W"]
+
+[lint.per-file-ignores]
+# web/app.py inserts the project root on sys.path before importing local
+# modules; those imports are intentionally not at the top of the file.
+"web/app.py" = ["E402"]

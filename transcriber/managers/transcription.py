@@ -16,11 +16,10 @@ Version     : 2.0.0
 """
 
 import logging
-import os
 import shutil
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor, Future, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional, Tuple
 
