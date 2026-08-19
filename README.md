@@ -2,42 +2,24 @@
 
 # whispr
 
-**A modular Python CLI and web UI for transcribing audio and video with multi-backend support.**
+**Transcribe audio and video with Whisper, from the command line or a browser. Four backends, parallel chunking, automatic fallback, and SRT/VTT/JSON output.**
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Backends](https://img.shields.io/badge/backends-whisper.cpp_%7C_faster--whisper_%7C_openai-555555?style=flat-square)](https://github.com/franckferman/whispr)
+[![Backends](https://img.shields.io/badge/backends-whisper.cpp_%7C_faster--whisper_%7C_openai_%7C_mega--asr-555555?style=flat-square)](https://github.com/franckferman/whispr)
 
 </div>
 
 ---
 
-## Table of Contents
-
-- [Overview](#overview)
-- [The Whisper Model](#the-whisper-model)
-- [Backends](#backends)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [CLI Usage](#cli-usage)
-- [Translation](#translation)
-- [Word-level timestamps](#word-level-timestamps)
-- [Web Interface](#web-interface)
-- [Makefile Reference](#makefile-reference)
-- [References](#references)
-- [License](#license)
-
----
-
 ## Overview
 
-whispr is a transcription pipeline built around OpenAI's Whisper model. It supports four backends — three interchangeable general-purpose ones plus an optional Mega-ASR specialist for degraded audio — parallel chunk processing, automatic fallback, and multiple output formats.
+whispr is a transcription pipeline built around OpenAI's Whisper model. It supports four backends (three interchangeable general-purpose ones plus an optional Mega-ASR specialist for degraded audio), parallel chunk processing, automatic fallback, and multiple output formats.
 
 Two interfaces ship with the same codebase:
 
 - A **CLI** (`main.py`) for scripting, automation, and direct use.
-- A **web UI** (`web/`) for browser-based use — upload a file or paste a URL, pick a backend, download the result.
+- A **web UI** (`web/`) for browser-based use: upload a file or paste a URL, pick a backend, download the result.
 
 **Key capabilities:**
 
@@ -49,7 +31,6 @@ Two interfaces ship with the same codebase:
 | **Output formats** | Plain text, JSON (with segments and timestamps), SRT subtitles, WebVTT subtitles |
 | **Chunking** | ffmpeg-based splitting for arbitrarily long files, transparent to the user |
 | **Parallel processing** | ThreadPoolExecutor, configurable worker count |
-| **Retry / fallback** | Exponential backoff per chunk, automatic switch to secondary backend on failure |
 | **Configuration** | JSON file + CLI overrides + `${ENV_VAR}` interpolation |
 | **Web interface** | FastAPI + vanilla JS, real-time WebSocket log, per-backend options |
 
@@ -57,49 +38,9 @@ Two interfaces ship with the same codebase:
 
 ## The Whisper Model
 
-[Whisper](https://openai.com/research/whisper) is an automatic speech recognition (ASR) model published by OpenAI in September 2022 ([Radford et al., arXiv:2212.04356](https://arxiv.org/abs/2212.04356)). It is a sequence-to-sequence model based on a standard **encoder-decoder Transformer** architecture, trained end-to-end with weak supervision on a large-scale multilingual dataset.
+whispr runs [OpenAI's Whisper](https://openai.com/research/whisper) ([Radford et al., 2022](https://arxiv.org/abs/2212.04356)), an encoder-decoder Transformer for automatic speech recognition, trained on 680,000 hours of weakly-supervised multilingual audio. Audio is resampled to 16 kHz, turned into a log-Mel spectrogram, and decoded in 30-second windows, with segment timestamps predicted inline and the language auto-detected from the first window.
 
-### Audio preprocessing
-
-Raw audio undergoes the following transformations before reaching the model:
-
-1. Resampled to **16 kHz mono**.
-2. A **log-Mel spectrogram** is computed with a 25 ms window, 10 ms stride, and **80 Mel frequency bins**.
-3. The spectrogram is split into **30-second windows** of 3000 frames (padded with silence if shorter).
-
-The resulting 80 x 3000 tensor is the input to the encoder.
-
-### Encoder
-
-The encoder consists of a convolutional front-end followed by Transformer blocks:
-
-- Two 1D convolution layers (kernel size 3, GELU activation) downsample the time axis by a factor of 2, reducing the sequence from 3000 to 1500 frames.
-- A stack of Transformer encoder blocks with multi-head self-attention and learned sinusoidal positional embeddings produces a sequence of contextual hidden representations.
-
-Hyperparameters scale with model size (e.g. `base`: 6 layers, 512 dims, 8 heads — `large-v2`: 32 layers, 1280 dims, 20 heads).
-
-### Decoder
-
-The decoder generates text tokens autoregressively via cross-attention over the encoder output:
-
-- A multilingual **Byte-Pair Encoding (BPE)** tokenizer with a vocabulary of ~50,000 tokens.
-- Each generation is conditioned on a structured prompt of special tokens:
-  - `<|startoftranscript|>` — sequence boundary
-  - `<|fr|>`, `<|en|>`, ... — target language (omitted for auto-detect)
-  - `<|transcribe|>` or `<|translate|>` — task selector
-  - `<|notimestamps|>` or `<|0.00|>` — disables or enables timestamp prediction
-
-### Timestamp prediction
-
-When timestamp mode is active, the decoder interleaves **timestamp tokens** (`<|0.00|>` to `<|30.00|>`, 0.02 s resolution) with text tokens, enabling segment-level timing without any external alignment step.
-
-### Language detection
-
-When no language is specified, Whisper runs the encoder on the first 30 seconds, then takes a softmax over language tokens at the first decoder step to identify the language. This adds ~1-2 seconds of overhead and works reliably for the 99 languages present in the training data.
-
-### Training
-
-Whisper was trained on **680,000 hours** of multilingual audio paired with transcripts collected from the web. Training uses standard cross-entropy over token sequences. The dataset was not manually curated — transcripts were obtained automatically (weak supervision), which accounts for the model's breadth as well as its sensitivity to low-resource languages and strong accents.
+For a full walkthrough of the architecture (preprocessing, encoder, decoder, timestamp prediction, language detection, and training), see [RESEARCH.md](RESEARCH.md).
 
 ### Model sizes
 
@@ -138,8 +79,8 @@ response_format=verbose_json
 `verbose_json` returns segments with start/end timestamps, used to produce `srt` and `vtt` outputs.
 
 **Constraints:**
-- **25 MB per request** — the chunking pipeline splits audio with ffmpeg before sending, so any file size is handled transparently.
-- **Rate limits** — `429 Too Many Requests` responses are handled with exponential backoff.
+- **25 MB per request**: the chunking pipeline splits audio with ffmpeg before sending, so any file size is handled transparently.
+- **Rate limits**: `429 Too Many Requests` responses are handled with exponential backoff.
 - The server always runs `whisper-1` (equivalent to `large`). No model size selection is available through the API.
 - **Cost:** ~$0.006/min of audio (as of 2024).
 
@@ -154,8 +95,8 @@ Original PyTorch weights are converted to CTranslate2's serialization format usi
 
 | `compute_type` | Precision | Use case |
 |---|---|---|
-| `int8` | 8-bit integer | CPU — best speed/memory tradeoff |
-| `float16` | 16-bit float | GPU (CUDA) — best throughput |
+| `int8` | 8-bit integer | CPU, best speed/memory tradeoff |
+| `float16` | 16-bit float | GPU (CUDA), best throughput |
 | `float32` | 32-bit float | Reference, no compression |
 
 `int8` on CPU reduces memory bandwidth by ~4x vs `float32` with negligible accuracy loss on the Whisper architecture.
@@ -168,7 +109,7 @@ With `faster_whisper_device: cuda`, CTranslate2 dispatches matrix multiplication
 
 ### whisper.cpp (`whisper_cpp`)
 
-whisper.cpp is a standalone C++ reimplementation of Whisper by [Georgi Gerganov](https://github.com/ggerganov/whisper.cpp), built on [GGML](https://github.com/ggerganov/ggml) — a minimal C tensor library with no dependencies beyond the C standard library.
+whisper.cpp is a standalone C++ reimplementation of Whisper by [Georgi Gerganov](https://github.com/ggerganov/whisper.cpp), built on [GGML](https://github.com/ggerganov/ggml), a minimal C tensor library with no dependencies beyond the C standard library.
 
 **Model format:**
 GGML stores weights as flat tensors in a custom binary `.bin` format, with a header describing the architecture. Quantization is applied statically at conversion time:
@@ -211,16 +152,16 @@ whisper-cli -m <model.bin> -f <audio.wav> --language fr --output-json -of <outpu
 
 ### Mega-ASR (`mega_asr`)
 
-An **optional, specialist** backend wrapping [Mega-ASR](https://github.com/xzf-thu/Mega-ASR) — a robustness LoRA + router on top of Qwen3-ASR-1.7B, aimed at **heavily degraded audio** (noise, far-field, echo, recording artefacts) where the Whisper backends tend to hallucinate, drop utterances, or return empty output. It is a last-resort backend, not a default.
+An **optional, specialist** backend wrapping [Mega-ASR](https://github.com/xzf-thu/Mega-ASR), a robustness LoRA + router on top of Qwen3-ASR-1.7B, aimed at **heavily degraded audio** (noise, far-field, echo, recording artefacts) where the Whisper backends tend to hallucinate, drop utterances, or return empty output. It is a last-resort backend, not a default.
 
 Two constraints shape how whispr uses it:
 
 - **The LoRA is English/Chinese only.** It was trained on the en/zh Voices-in-the-Wild-2M set, so its robustness gain does not transfer to other languages. whispr mounts the LoRA **only for `en`/`zh`**; for the other ~28 Qwen3-ASR languages it runs the base model (LoRA off) and warns. A language Qwen3-ASR does not support is rejected up front. Mega-ASR's own router keys off *audio quality*, not language, so whispr bypasses it and drives the LoRA from the language instead.
 - **It is heavy and GPU-oriented.** A 1.7B model in Transformers on CPU is slow, so CPU is opt-in (`--mega-allow-cpu`). Inference is serialised behind a lock (the wrapper mutates shared LoRA state), so this backend is effectively single-threaded regardless of `--workers`.
 
-**v1 returns text only** (no per-segment timestamps), so `srt`/`vtt` fall back to a single block — use `txt`/`json`. Timestamps would need Qwen3-ForcedAligner and are left for later.
+**v1 returns text only** (no per-segment timestamps), so `srt`/`vtt` fall back to a single block, so use `txt`/`json`. Timestamps would need Qwen3-ForcedAligner and are left for later.
 
-**Setup** (the `MegaASR` wrapper is not on PyPI — it ships with the repo):
+**Setup** (the `MegaASR` wrapper is not on PyPI; it ships with the repo):
 ```bash
 pip install -r requirements-mega.txt
 git clone https://github.com/xzf-thu/Mega-ASR
@@ -231,7 +172,7 @@ python main.py --file noisy_interview.wav --backend mega_asr --language en \
     --mega-repo /path/to/Mega-ASR --mega-device cuda:0 --format txt,json
 ```
 
-> Because it caps parallelism and needs a GPU + a repo clone + multi-GB weights, keep `mega_asr` as a targeted tool for audio the other backends fail on — it also pairs well as a `--fallback-backend` for English jobs.
+> Because it caps parallelism and needs a GPU + a repo clone + multi-GB weights, keep `mega_asr` as a targeted tool for audio the other backends fail on. It also pairs well as a `--fallback-backend` for English jobs.
 
 ### Comparison
 
@@ -259,47 +200,9 @@ python main.py --file noisy_interview.wav --backend mega_asr --language en \
 
 ---
 
-## Project Structure
-
-```
-whispr/
-├── main.py                        # CLI entry point (argparse)
-├── config.example.json            # Annotated configuration reference
-├── requirements.txt               # Core dependencies (optional deps commented)
-├── install.sh                     # Interactive setup script
-├── Makefile                       # Common tasks
-│
-├── transcriber/
-│   ├── config.py                  # Config dataclass, JSON loading, env interpolation
-│   ├── logger.py                  # Structured logging (file + stderr)
-│   ├── backends/
-│   │   ├── base.py                # TranscriptionBackend ABC + TranscriptionResult
-│   │   ├── whisper_cpp.py         # subprocess to whisper.cpp binary
-│   │   ├── faster_whisper.py      # faster-whisper (optional import)
-│   │   └── openai_api.py          # OpenAI Whisper API with rate-limit handling
-│   ├── processors/
-│   │   ├── video.py               # Source resolution: local / YouTube / HTTP
-│   │   └── audio.py               # WAV conversion, duration probing
-│   ├── managers/
-│   │   └── transcription.py       # Orchestrator: chunks, parallel, retry, merge
-│   └── formatters/
-│       └── output.py              # txt, json, srt, vtt writers
-│
-└── web/
-    ├── app.py                     # FastAPI application
-    └── static/
-        ├── index.html
-        ├── style.css
-        └── app.js
-```
-
----
-
 ## Installation
 
-**System prerequisites:** Python 3.9+, ffmpeg
-
-ffmpeg is required at the system level for audio extraction, format conversion, and chunk splitting. Install it with your package manager if not already present (`apt-get install ffmpeg`, `brew install ffmpeg`, `dnf install ffmpeg`). `install.sh` checks for it and installs it automatically if absent.
+**System prerequisites:** Python 3.9+ and ffmpeg (`install.sh` installs ffmpeg for you if it is missing).
 
 ### Interactive installer (recommended)
 
@@ -327,14 +230,7 @@ The installer asks two questions:
 [5] Skip
 ```
 
-What the installer does:
-1. Verifies Python 3.9+ and ffmpeg (installs ffmpeg if absent)
-2. Creates a virtual environment in `.venv/`
-3. Installs core dependencies (`ffmpeg-python`, `tqdm`, `requests`, `yt-dlp`, `pydub`)
-4. Installs web UI dependencies if selected
-5. Installs the chosen backend(s)
-6. For whisper.cpp: clones the repository, compiles with `make -j$(nproc)`, prompts for model download, and writes the detected binary and model paths into `config.json`
-7. Copies `config.example.json` to `config.json` if absent
+It verifies Python and ffmpeg, creates a `.venv/`, installs the core deps plus the interface and backend(s) you pick, copies `config.example.json` to `config.json`, and (for whisper.cpp) clones and compiles the binary and records its paths in the config.
 
 After installation:
 ```bash
@@ -441,7 +337,7 @@ String values support `${ENV_VAR}` interpolation:
 python main.py [--file PATH | --url URL] [options]
 ```
 
-If `--backend` is not specified, the value from `config.json` is used (default: `faster_whisper`). The CLI does not perform automatic backend detection — set your preferred backend in `config.json` once and omit the flag on subsequent runs.
+If `--backend` is not specified, the value from `config.json` is used (default: `faster_whisper`). The CLI does not perform automatic backend detection: set your preferred backend in `config.json` once and omit the flag on subsequent runs.
 
 ### Examples
 
@@ -491,7 +387,7 @@ python main.py --config config.json
 
 > **YouTube and yt-dlp.** YouTube now deciphers its stream URLs with a JavaScript
 > challenge, and yt-dlp needs a JS runtime to solve it. Without one, yt-dlp falls
-> back to player clients (android/tv) that skip the challenge — short videos still
+> back to player clients (android/tv) that skip the challenge, so short videos still
 > download, but some formats are missing, speeds can be throttled, and the path is
 > deprecated. For reliable YouTube support, install **Deno** on the host (yt-dlp
 > enables it by default and runs the untrusted player JS in its sandbox):
@@ -500,7 +396,7 @@ python main.py --config config.json
 > emerge dev-lang/deno-bin      # Gentoo; elsewhere see https://deno.land
 > ```
 >
-> yt-dlp auto-detects it — no whispr config needed. This is a host dependency; it
+> yt-dlp auto-detects it, no whispr config needed. This is a host dependency; it
 > only affects YouTube URLs, not file uploads or direct HTTP links.
 
 ### All flags
@@ -576,8 +472,8 @@ All four formats are produced by the same formatter, independently of the backen
 |---|---|
 | `txt` | Plain text, no timestamps |
 | `json` | Full output: segments, timestamps, language, metadata |
-| `srt` | SubRip subtitles — VLC, ffmpeg, Premiere |
-| `vtt` | WebVTT — HTML5 `<video>` element |
+| `srt` | SubRip subtitles (VLC, ffmpeg, Premiere) |
+| `vtt` | WebVTT for the HTML5 `<video>` element |
 
 ### Chunking
 
@@ -610,7 +506,7 @@ python main.py --file video.mp4 --backend faster_whisper \
 
 ## Translation
 
-whispr can translate a transcript into another language **fully locally** — no online service, no API key. Translation is powered by [Argos Translate](https://github.com/argosopentech/argos-translate) (OPUS-MT models on the same CTranslate2 engine faster-whisper uses).
+whispr can translate a transcript into another language **fully locally**: no online service, no API key. Translation is powered by [Argos Translate](https://github.com/argosopentech/argos-translate) (OPUS-MT models on the same CTranslate2 engine faster-whisper uses).
 
 It is an **optional extra**, kept out of the core dependencies because it is heavier (it pulls `stanza` → `torch`):
 
@@ -618,7 +514,7 @@ It is an **optional extra**, kept out of the core dependencies because it is hea
 pip install -r requirements-translate.txt
 ```
 
-Language models are provisioned on first use — downloaded once from the Argos index, or supplied offline via `--translate-model path/to/model.argosmodel` (pair `--no-translate-download` with it for an air-gapped setup). After that, all translation runs on-device.
+Language models are provisioned on first use: downloaded once from the Argos index, or supplied offline via `--translate-model path/to/model.argosmodel` (pair `--no-translate-download` with it for an air-gapped setup). After that, all translation runs on-device.
 
 ### Two modes
 
@@ -637,7 +533,7 @@ python main.py --translate-text transcript.txt --translate-from en --translate-t
 ### How it behaves
 
 - **The original is never overwritten.** Translated output is written alongside it with a `.{lang}` suffix.
-- **Timestamps are preserved.** For `srt`/`vtt`, each subtitle segment is translated individually so cues stay aligned. The `txt`/`json` body is translated as a whole for better context — so a subtitle line and the plain-text body may be phrased slightly differently. That is expected: alignment for subtitles, context for prose.
+- **Timestamps are preserved.** For `srt`/`vtt`, each subtitle segment is translated individually so cues stay aligned. The `txt`/`json` body is translated as a whole for better context, so a subtitle line and the plain-text body may be phrased slightly differently. That is expected: alignment for subtitles, context for prose.
 - **Graceful when absent.** If `argostranslate` is not installed, a transcription+translation run still writes the transcript and logs a clear warning instead of failing.
 
 > Translation quality is that of the underlying OPUS-MT model for the pair, and is independent of the transcription backend.
@@ -646,7 +542,7 @@ python main.py --translate-text transcript.txt --translate-from en --translate-t
 
 ## Word-level timestamps
 
-By default whispr emits **segment-level** timings. Pass `--word-timestamps` to also get **per-word** timings, stored inside each segment of the JSON output under a `words` list (`{word, start, end, probability}`). It's **opt-in and additive** — without the flag, output is byte-for-byte unchanged; `srt`/`vtt` are untouched either way.
+By default whispr emits **segment-level** timings. Pass `--word-timestamps` to also get **per-word** timings, stored inside each segment of the JSON output under a `words` list (`{word, start, end, probability}`). It's **opt-in and additive**: without the flag, output is byte-for-byte unchanged; `srt`/`vtt` are untouched either way.
 
 ```bash
 python main.py --file talk.mp4 --backend faster_whisper --language en \
@@ -668,7 +564,7 @@ python main.py --file talk.mp4 --language en \
 ```
 
 - **`native` needs no extra** and is validated end-to-end. It is enough for film / translation subtitle styles.
-- **The `stable_ts` and `whisperx` providers are opt-in and heavy** (they pull `torch`). If the package is absent, whispr logs a warning and keeps the timing it already has — a missing extra never breaks a run. Use them when word timing must land exactly on the syllable (e.g. animated word-by-word captions).
+- **The `stable_ts` and `whisperx` providers are opt-in and heavy** (they pull `torch`). If the package is absent, whispr logs a warning and keeps the timing it already has, so a missing extra never breaks a run. Use them when word timing must land exactly on the syllable (e.g. animated word-by-word captions).
 - **`mega_asr` has no timestamps** (v1) and cannot supply word timing.
 
 > This feeds downstream tooling (e.g. styled/animated subtitle burners) that needs to know exactly when each word is spoken.
@@ -694,7 +590,7 @@ Open `http://localhost:8000`.
 
 ### Features
 
-- Backend detection at startup — green dot if ready, grey with install hint if unavailable
+- Backend detection at startup: green dot if ready, grey with install hint if unavailable
 - Auto-selects the best available backend: `faster_whisper` > `whisper_cpp` > `openai`
 - Per-backend options shown dynamically:
   - **faster-whisper**: model size dropdown (tiny / base / small / medium / large-v2)
@@ -709,7 +605,7 @@ Open `http://localhost:8000`.
 
 The server binds to `127.0.0.1` by default. Before putting it on a public
 address, terminate TLS on a reverse proxy in front of it and enable the token
-gate — the endpoints have no auth otherwise. Configuration is via environment
+gate; the endpoints have no auth otherwise. Configuration is via environment
 variables:
 
 | Variable | Default | Purpose |
@@ -782,7 +678,7 @@ make clean-all                                  # Remove venv too
 
 [6] Systran. (2023). *faster-whisper: Faster Whisper transcription with CTranslate2*. GitHub repository. https://github.com/SYSTRAN/faster-whisper
 
-[7] Klein, G., Crego, J., & Senellart, J. (2020). *Efficient and High-Quality Neural Machine Translation with OpenNMT*. Proceedings of the 4th Workshop on Neural Generation and Translation. — CTranslate2 inference engine underlying faster-whisper. https://github.com/OpenNMT/CTranslate2
+[7] Klein, G., Crego, J., & Senellart, J. (2020). *Efficient and High-Quality Neural Machine Translation with OpenNMT*. Proceedings of the 4th Workshop on Neural Generation and Translation. CTranslate2 inference engine underlying faster-whisper. https://github.com/OpenNMT/CTranslate2
 
 [8] OpenAI. (2023). *Whisper API Reference*. OpenAI Platform Documentation. https://platform.openai.com/docs/api-reference/audio
 
@@ -790,6 +686,4 @@ make clean-all                                  # Remove venv too
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
-
-Any use, modification, or distribution — including over a network — requires the full source code to remain open under the same license.
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE) for the full terms.
