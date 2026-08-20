@@ -1,0 +1,25 @@
+# Optional: Mega-ASR backend (--backend mega_asr).
+#
+# Install only if you use the mega_asr backend:
+#     pip install -r requirements-mega.txt
+#
+# Mega-ASR is a robustness LoRA + router on top of Qwen3-ASR-1.7B, aimed at
+# heavily degraded English/Chinese audio. It is GPU-oriented and heavy (torch),
+# which is why it lives in a separate, opt-in requirements file and never in the
+# core requirements.txt.
+#
+# The MegaASR wrapper class is NOT on PyPI: it ships with the Mega-ASR repo.
+# You also need a local clone plus its downloaded checkpoints:
+#     git clone https://github.com/xzf-thu/Mega-ASR
+#     cd Mega-ASR && python scripts/download.py      # fetches ckpt/Mega-ASR
+# then point whispr at it with --mega-repo /path/to/Mega-ASR (and a GPU
+# --mega-device cuda:0, or --mega-allow-cpu to accept slow CPU inference).
+# Note: the Mega-ASR repo pins exact torch/torchaudio versions in its own
+# requirements.txt; that file is authoritative for the wrapper. torchaudio is
+# required by the audio-quality router (MelSpectrogram), not just torch.
+qwen-asr
+torch
+torchaudio
+peft
+safetensors
+soundfile

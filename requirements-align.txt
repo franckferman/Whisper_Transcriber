@@ -1,0 +1,16 @@
+# Optional: premium word-timestamp providers (--word-timestamps-provider).
+#
+# Install only if you want tighter word timing than the native backend path:
+#     pip install -r requirements-align.txt
+#
+# These do post-hoc forced alignment of the transcript over the audio and are
+# heavier than whispr's core (they pull torch), which is why they live in a
+# separate, opt-in file. Pick the one matching the provider you use:
+#
+#   --word-timestamps-provider stable_ts   -> needs stable-ts
+#   --word-timestamps-provider whisperx    -> needs whisperx
+#
+# The default provider ('native') needs none of this: faster-whisper and
+# whisper.cpp emit word timing themselves.
+stable-ts
+# whisperx   # uncomment for the whisperx provider (also pulls wav2vec2 models)

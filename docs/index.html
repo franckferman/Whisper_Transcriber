@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>whispr</title>
+<meta name="description" content="Modular multi-backend Whisper transcription: CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, and Mega-ASR for noisy audio. Parallel chunk processing, automatic fallback, local translation, word-level timestamps, SRT/VTT/JSON output.">
+<meta property="og:title" content="whispr">
+<meta property="og:description" content="Modular multi-backend Whisper transcription: CLI and web UI. faster-whisper, whisper.cpp, OpenAI API, Mega-ASR. Local translation and word timestamps.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://franckferman.github.io/whispr/">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #05050a;
+  --s1:      #0b0b12;
+  --s2:      #0f0f18;
+  --border:  #1a1a28;
+  --dim:     #222235;
+  --text:    #c8c8d8;
+  --muted:   #40405a;
+  --faint:   #16162a;
+  --accent:  #0ea5e9;
+  --accent2: #38bdf8;
+  --green:   #10b981;
+  --amber:   #f59e0b;
+  --mono:    'Courier New', Courier, monospace;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--mono); overflow-x: hidden; }
+
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background: repeating-linear-gradient(to bottom,
+    transparent 0px, transparent 3px,
+    rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px);
+  pointer-events: none; z-index: 1000;
+}
+
+.bg-glow {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 45%,
+    rgba(14,165,233,.04) 0%, transparent 70%);
+  animation: glow-breathe 6s ease-in-out infinite;
+  pointer-events: none; z-index: 0;
+}
+@keyframes glow-breathe { 0%,100%{opacity:.5} 50%{opacity:1} }
+
+.bg-grid {
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.009) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.009) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none; z-index: 0;
+}
+
+.page {
+  position: relative; z-index: 1;
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 2.5rem 1.5rem 3.5rem; gap: 2.4rem;
+}
+
+.header { text-align: center; display: flex; flex-direction: column; align-items: center; gap: .85rem; }
+
+.req-pill {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font-size: .58rem; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--faint);
+  padding: .22rem .75rem; border-radius: 2px;
+}
+.req-pill::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent); animation: blink 2.8s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+.wave {
+  display: flex; align-items: center; gap: 2.5px;
+  height: 22px; margin: .1rem 0;
+}
+.wave-bar {
+  width: 2.5px; border-radius: 2px;
+  background: var(--accent);
+  opacity: .35;
+  animation: wave-pulse 1.6s ease-in-out infinite;
+}
+.wave-bar:nth-child(1)  { animation-delay: 0s;    }
+.wave-bar:nth-child(2)  { animation-delay: .08s;  }
+.wave-bar:nth-child(3)  { animation-delay: .16s;  }
+.wave-bar:nth-child(4)  { animation-delay: .24s;  }
+.wave-bar:nth-child(5)  { animation-delay: .32s;  }
+.wave-bar:nth-child(6)  { animation-delay: .40s;  }
+.wave-bar:nth-child(7)  { animation-delay: .48s;  }
+.wave-bar:nth-child(8)  { animation-delay: .56s;  }
+.wave-bar:nth-child(9)  { animation-delay: .64s;  }
+.wave-bar:nth-child(10) { animation-delay: .72s;  }
+.wave-bar:nth-child(11) { animation-delay: .80s;  }
+.wave-bar:nth-child(12) { animation-delay: .88s;  }
+.wave-bar:nth-child(13) { animation-delay: .96s;  }
+.wave-bar:nth-child(14) { animation-delay: 1.04s; }
+.wave-bar:nth-child(15) { animation-delay: 1.12s; }
+.wave-bar:nth-child(16) { animation-delay: 1.20s; }
+.wave-bar:nth-child(17) { animation-delay: 1.28s; }
+.wave-bar:nth-child(18) { animation-delay: 1.36s; }
+.wave-bar:nth-child(19) { animation-delay: 1.44s; }
+.wave-bar:nth-child(20) { animation-delay: 1.52s; }
+@keyframes wave-pulse {
+  0%, 100% { height: 4px;  opacity: .25; }
+  50%       { height: 18px; opacity: .6;  }
+}
+
+.glitch {
+  font-size: clamp(2.6rem, 8vw, 5.5rem);
+  font-weight: 700; letter-spacing: .04em; text-transform: lowercase;
+  color: var(--text); position: relative; user-select: none;
+}
+.glitch::before, .glitch::after {
+  content: attr(data-text);
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+}
+.glitch::before {
+  color: var(--accent2);
+  clip-path: inset(100% 0 0 0);
+  animation: gb 6s infinite;
+}
+.glitch::after {
+  color: rgba(200,200,220,.8);
+  clip-path: inset(100% 0 0 0);
+  animation: ga 6s infinite;
+}
+@keyframes gb {
+  0%,83%,89%,94%,100% { clip-path:inset(100% 0 0 0); transform:translate(0); opacity:1; }
+  84%   { clip-path:polygon(0 18%,100% 18%,100% 27%,0 27%); transform:translate(-9px,0); }
+  85%   { clip-path:polygon(0 52%,100% 52%,100% 60%,0 60%,0 8%,100% 8%,100% 15%,0 15%); transform:translate(6px,0); }
+  86%   { clip-path:polygon(0 72%,100% 72%,100% 79%,0 79%); transform:translate(-4px,0); }
+  87%   { clip-path:polygon(0 33%,100% 33%,100% 41%,0 41%); transform:translate(8px,0); }
+  88%   { clip-path:inset(100% 0 0 0); transform:translate(0); }
+  92%   { clip-path:polygon(0 22%,100% 22%,100% 30%,0 30%); transform:translate(-5px,0); opacity:.4; }
+  93%   { clip-path:inset(100% 0 0 0); opacity:0; }
+}
+@keyframes ga {
+  0%,83%,89%,94%,100% { clip-path:inset(100% 0 0 0); transform:translate(0); opacity:1; }
+  84.4% { clip-path:polygon(0 61%,100% 61%,100% 70%,0 70%); transform:translate(8px,0); }
+  85.4% { clip-path:polygon(0 28%,100% 28%,100% 36%,0 36%,0 74%,100% 74%,100% 82%,0 82%); transform:translate(-6px,0); }
+  86.4% { clip-path:polygon(0 44%,100% 44%,100% 52%,0 52%); transform:translate(5px,0); }
+  87.4% { clip-path:polygon(0 12%,100% 12%,100% 19%,0 19%); transform:translate(-7px,0); }
+  88.4% { clip-path:inset(100% 0 0 0); transform:translate(0); }
+  92.5% { clip-path:polygon(0 55%,100% 55%,100% 63%,0 63%); transform:translate(4px,0); opacity:.3; }
+  93.5% { clip-path:inset(100% 0 0 0); opacity:0; }
+}
+
+.tagline {
+  font-size: clamp(.62rem, 1.5vw, .78rem);
+  letter-spacing: .18em; text-transform: uppercase;
+  color: var(--muted); text-align: center;
+}
+.tagline .sep { color: #1e1e35; margin: 0 .4rem; }
+
+.backends {
+  display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center;
+  margin-top: -.2rem;
+}
+.backend-pill {
+  font-size: .58rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--faint);
+  padding: .2rem .6rem; border-radius: 2px;
+  cursor: pointer; background: none;
+  font-family: var(--mono);
+  transition: color .2s, border-color .2s;
+}
+.backend-pill:hover { color: var(--accent2); border-color: var(--accent); }
+.backend-pill.hi { color: var(--accent2); border-color: var(--accent); }
+
+.features {
+  display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center;
+}
+.feat {
+  font-size: .57rem; letter-spacing: .1em; text-transform: uppercase;
+  color: #28284a; border: 1px solid #10101e;
+  padding: .22rem .7rem; border-radius: 2px;
+}
+
+.scenario-block { width: 100%; max-width: 860px; display: flex; flex-direction: column; gap: 0; }
+
+.tabs {
+  display: flex; gap: 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; overflow-y: hidden;
+}
+.tab {
+  background: none; border: none; cursor: pointer;
+  font-family: var(--mono); font-size: .67rem;
+  letter-spacing: .11em; text-transform: uppercase;
+  color: var(--muted);
+  padding: .65rem 1.1rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+  display: flex; align-items: center; gap: .45rem;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.kbd {
+  display: inline-block; font-size: .54rem; color: var(--faint);
+  border: 1px solid var(--faint); padding: .05rem .28rem; border-radius: 2px;
+  transition: color .15s, border-color .15s;
+}
+.tab:hover .kbd, .tab.active .kbd { color: var(--muted); border-color: var(--dim); }
+
+.terminal {
+  background: var(--s1);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 5px 5px; overflow: hidden;
+  transition: box-shadow .3s;
+}
+.terminal:hover { box-shadow: 0 0 50px rgba(14,165,233,.06), 0 8px 40px rgba(0,0,0,.4); }
+
+.term-bar {
+  background: var(--s2); padding: .55rem 1rem;
+  display: flex; align-items: center; gap: .45rem;
+  border-bottom: 1px solid var(--border);
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; transition: background .25s; }
+.dot-r { background: #1e1220; }
+.dot-y { background: #1e1c10; }
+.dot-g { background: #0e1e14; }
+.terminal:hover .dot-r { background: #c0392b; }
+.terminal:hover .dot-y { background: #c09a2b; }
+.terminal:hover .dot-g { background: #10b981; }
+.term-label { font-size: .61rem; color: var(--muted); margin: 0 auto; padding-right: 28px; letter-spacing: .05em; }
+
+.term-body {
+  padding: 1.1rem 1.4rem;
+  display: flex; align-items: flex-start; gap: .8rem;
+  min-height: 3.4rem; overflow-x: auto; overflow-y: hidden;
+}
+.ps { color: var(--accent2); font-size: .95rem; flex-shrink: 0; margin-top: .05rem; user-select: none; }
+
+#cmd-display {
+  font-size: clamp(.67rem, 1.55vw, .81rem); line-height: 1.55; flex: 1;
+  white-space: nowrap;
+  animation: cmd-in .18s ease;
+}
+@keyframes cmd-in { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
+
+.cmd  { color: #86efac; }
+.kw   { color: #7dd3fc; }
+.str  { color: #fdba74; }
+.flag { color: #fde68a; }
+.env  { color: #c4b5fd; }
+.sep  { color: var(--muted); }
+.op   { color: #4a4a6a; }
+
+.tab-desc {
+  font-size: .63rem; letter-spacing: .08em;
+  color: var(--muted); margin-top: .7rem; min-height: 1rem;
+  animation: cmd-in .18s ease;
+}
+.tab-desc .hl { color: var(--text); }
+
+.actions { display: flex; gap: .8rem; margin-top: 1.2rem; align-items: center; flex-wrap: wrap; }
+
+.copy-btn {
+  background: var(--accent); color: #fff; border: none;
+  padding: .8rem 2rem; font-family: var(--mono); font-size: .72rem;
+  letter-spacing: .15em; text-transform: uppercase;
+  cursor: pointer; border-radius: 3px;
+  transition: background .15s, box-shadow .2s, transform .1s;
+}
+.copy-btn:hover { background: var(--accent2); box-shadow: 0 0 24px rgba(56,189,248,.25); }
+.copy-btn:active { transform: scale(.97); }
+.copy-btn.ok { background: #065f46; box-shadow: 0 0 24px rgba(16,185,129,.2); }
+
+.kbd-hint { font-size: .6rem; letter-spacing: .1em; color: var(--muted); }
+.kbd-hint kbd {
+  font-family: var(--mono); border: 1px solid var(--dim);
+  padding: .1rem .3rem; border-radius: 2px; font-size: .57rem; color: var(--muted);
+  cursor: pointer; transition: color .15s, border-color .15s;
+}
+.kbd-hint kbd:hover { color: var(--text); border-color: var(--border); }
+
+.links { display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center; }
+.lnk {
+  font-family: var(--mono); font-size: .65rem;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); text-decoration: none;
+  border: 1px solid var(--faint); padding: .5rem 1.1rem; border-radius: 3px;
+  transition: color .15s, border-color .15s;
+}
+.lnk:hover { color: var(--text); border-color: var(--border); }
+
+footer {
+  position: fixed; bottom: 1rem; left: 0; right: 0;
+  text-align: center; font-size: .6rem;
+  letter-spacing: .1em; color: #1a1a2e;
+  pointer-events: none; z-index: 1;
+}
+footer a { color: #252540; text-decoration: none; pointer-events: all; transition: color .15s; }
+footer a:hover { color: var(--muted); }
+
+@media (max-width: 700px) {
+  .page { gap: 1.9rem; }
+  .term-label { display: none; }
+  .features { display: none; }
+}
+@media (max-width: 560px) {
+  .page { gap: 1.6rem; padding: 2rem 1rem 3.5rem; }
+  .tab { padding: .6rem .7rem; font-size: .6rem; letter-spacing: .08em; }
+  .term-body { padding: .9rem 1rem; }
+  .actions { flex-direction: column; align-items: stretch; }
+  .copy-btn { width: 100%; padding: .9rem 1rem; }
+  .kbd-hint { display: none; }
+}
+@media (max-width: 380px) {
+  .page { padding: 1.5rem .75rem 3.5rem; gap: 1.4rem; }
+  .glitch { letter-spacing: .01em; }
+  .req-pill { font-size: .53rem; }
+  .tab { padding: .55rem .6rem; font-size: .57rem; }
+  .links { gap: .7rem; }
+  .lnk { padding: .45rem .85rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+
+<div class="page">
+
+  <div class="header">
+    <span class="req-pill">Python &nbsp;&middot;&nbsp; ffmpeg</span>
+
+    <div class="wave" aria-hidden="true">
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+      <div class="wave-bar"></div><div class="wave-bar"></div>
+    </div>
+
+    <h1 class="glitch" data-text="whispr">whispr</h1>
+    <p class="tagline">CLI + Web UI<span class="sep">&middot;</span>Multi-Backend</p>
+
+    <div class="backends">
+      <button class="backend-pill hi" onclick="setBackend(0)">faster-whisper</button>
+      <button class="backend-pill"    onclick="setBackend(1)">whisper.cpp</button>
+      <button class="backend-pill"    onclick="setBackend(2)">openai api</button>
+      <button class="backend-pill"    onclick="setBackend(3)">mega-asr</button>
+    </div>
+  </div>
+
+  <div class="features">
+    <span class="feat">Parallel chunks</span>
+    <span class="feat">TXT &middot; SRT &middot; VTT &middot; JSON</span>
+    <span class="feat">YouTube + HTTP URLs</span>
+    <span class="feat">Local translation</span>
+    <span class="feat">Word timestamps</span>
+  </div>
+
+  <div class="scenario-block">
+    <div class="tabs" role="tablist">
+      <button class="tab active" onclick="setTab(0)"><span class="kbd">1</span> install</button>
+      <button class="tab"        onclick="setTab(1)"><span class="kbd">2</span> file</button>
+      <button class="tab"        onclick="setTab(2)"><span class="kbd">3</span> url</button>
+      <button class="tab"        onclick="setTab(3)"><span class="kbd">4</span> web ui</button>
+      <button class="tab"        onclick="setTab(4)"><span class="kbd">5</span> cloud</button>
+      <button class="tab"        onclick="setTab(5)"><span class="kbd">6</span> translate</button>
+    </div>
+
+    <div class="terminal">
+      <div class="term-bar">
+        <span class="dot dot-r"></span>
+        <span class="dot dot-y"></span>
+        <span class="dot dot-g"></span>
+        <span class="term-label">bash -- whispr</span>
+      </div>
+      <div class="term-body">
+        <span class="ps">$&gt;</span>
+        <span id="cmd-display"></span>
+      </div>
+    </div>
+
+    <div id="tab-desc" class="tab-desc"></div>
+
+    <div class="actions">
+      <button class="copy-btn" id="copy-btn" onclick="copyCmd()">Copy</button>
+      <span class="kbd-hint">switch &nbsp;<kbd onclick="setTab(0)">1</kbd><kbd onclick="setTab(1)">2</kbd><kbd onclick="setTab(2)">3</kbd><kbd onclick="setTab(3)">4</kbd><kbd onclick="setTab(4)">5</kbd><kbd onclick="setTab(5)">6</kbd></span>
+    </div>
+  </div>
+
+  <div class="links">
+    <a class="lnk" href="https://github.com/franckferman/whispr/archive/refs/heads/stable.zip" target="_blank" rel="noopener">Download</a>
+    <a class="lnk" href="https://github.com/franckferman/whispr" target="_blank" rel="noopener">Source</a>
+    <a class="lnk" href="https://github.com/franckferman/whispr#readme" target="_blank" rel="noopener">Docs</a>
+  </div>
+
+</div>
+
+<footer>
+  <a href="https://github.com/franckferman">Franck FERMAN</a> &nbsp;&middot;&nbsp; AGPL-3.0
+</footer>
+
+<script>
+const S = [
+  {
+    raw:  `git clone https://github.com/franckferman/whispr.git && cd whispr && bash install.sh`,
+    html: `<span class="cmd">git</span> <span class="kw">clone</span> <span class="str">https://github.com/franckferman/whispr.git</span> <span class="op">&amp;&amp;</span> <span class="cmd">cd</span> <span class="str">whispr</span> <span class="op">&amp;&amp;</span> <span class="cmd">bash</span> <span class="str">install.sh</span>`,
+    desc: `Interactive installer. Detects <span class="hl">Python</span> and <span class="hl">ffmpeg</span>, sets up a venv, and lets you choose backends (<span class="hl">faster-whisper</span>, <span class="hl">whisper.cpp</span>, <span class="hl">OpenAI</span>) and interfaces (CLI / Web UI).`,
+  },
+  {
+    raw:  `python main.py -f lecture.mp4 --backend faster_whisper -F txt,srt,vtt`,
+    html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">lecture.mp4</span> <span class="flag">--backend</span> <span class="kw">faster_whisper</span> <span class="flag">-F</span> <span class="str">txt,srt,vtt</span>`,
+    desc: `Transcribe a local file with <span class="hl">faster-whisper</span> (CTranslate2, GPU/CPU). Outputs <span class="hl">plain text</span>, <span class="hl">SRT</span>, and <span class="hl">WebVTT</span> subtitles. Supports MP3, MP4, WAV, MKV, FLAC, and any ffmpeg-compatible format.`,
+  },
+  {
+    raw:  `python main.py -u "https://youtu.be/dQw4w9WgXcQ" --backend faster_whisper -l en -F srt`,
+    html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-u</span> <span class="str">"https://youtu.be/dQw4w9WgXcQ"</span> <span class="flag">--backend</span> <span class="kw">faster_whisper</span> <span class="flag">-l</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
+    desc: `Transcribe a <span class="hl">YouTube URL</span> (or any HTTP URL) via yt-dlp. Audio is extracted, chunked with ffmpeg, transcribed in parallel, and output as <span class="hl">SRT subtitles</span>. Language auto-detected if <span class="hl">-l</span> is omitted.`,
+  },
+  {
+    raw:  `cd web && uvicorn app:app --host 127.0.0.1 --port 8000`,
+    html: `<span class="cmd">cd</span> <span class="str">web</span> <span class="op">&amp;&amp;</span> <span class="cmd">uvicorn</span> <span class="str">app:app</span> <span class="flag">--host</span> <span class="str">127.0.0.1</span> <span class="flag">--port</span> <span class="str">8000</span>`,
+    desc: `Launch the <span class="hl">FastAPI web UI</span>. Upload a file or paste a URL, pick a backend, monitor progress via <span class="hl">WebSocket</span> live logs, and download results in any format directly from the browser. Binds to <span class="hl">localhost</span>; put it behind a reverse proxy with <span class="hl">WHISPR_AUTH_TOKEN</span> to expose it.`,
+  },
+  {
+    raw:  `python main.py -f interview.mp3 --backend openai --openai-key $OPENAI_API_KEY -F srt,txt`,
+    html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">interview.mp3</span> <span class="flag">--backend</span> <span class="kw">openai</span> <span class="flag">--openai-key</span> <span class="env">$OPENAI_API_KEY</span> <span class="flag">-F</span> <span class="str">srt,txt</span>`,
+    desc: `Cloud transcription via <span class="hl">OpenAI Whisper API</span>. No local model. Files &gt; 25 MB are chunked automatically. Rate-limit handling with <span class="hl">Retry-After</span> backoff. Falls back to a local backend on failure if <span class="hl">--fallback-backend</span> is set.`,
+  },
+  {
+    raw:  `python main.py -f talk.mp4 -l fr --translate-to en -F srt`,
+    html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">talk.mp4</span> <span class="flag">-l</span> <span class="str">fr</span> <span class="flag">--translate-to</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
+    desc: `Transcribe, then <span class="hl">translate the transcript locally</span> (Argos, fully offline, no online API). The original is kept and a <span class="hl">{prefix}.en.srt</span> copy is written, e.g. a French talk with English subtitles.`,
+  },
+];
+
+const BACKENDS = ['faster_whisper', 'whisper_cpp', 'openai', 'mega_asr'];
+const BACKEND_LABELS = ['faster-whisper', 'whisper.cpp', 'openai api', 'mega-asr'];
+let cur = 0;
+let curBackend = 0;
+
+function setBackend(i) {
+  curBackend = i;
+  document.querySelectorAll('.backend-pill').forEach((p, idx) => p.classList.toggle('hi', idx === i));
+  setTab(cur);
+}
+
+function buildCmd(i) {
+  if (i === 0) return S[0];
+  if (i === 3) return S[3];
+  if (i === 4) return S[4];
+  if (i === 5) return S[5];
+  const b = BACKENDS[curBackend];
+  const bl = BACKEND_LABELS[curBackend];
+  const mega = b === 'mega_asr';
+  const megaFlags = ` <span class="flag">--mega-repo</span> <span class="str">./Mega-ASR</span> <span class="flag">--mega-allow-cpu</span>`;
+  if (i === 1) {
+    const src = mega ? 'noisy.wav' : 'lecture.mp4';
+    return {
+      raw:  `python main.py -f ${src} --backend ${b}${mega ? ' --mega-repo ./Mega-ASR --mega-allow-cpu' : ''} -F txt,srt,vtt`,
+      html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-f</span> <span class="str">${src}</span> <span class="flag">--backend</span> <span class="kw">${b}</span>${mega ? megaFlags : ''} <span class="flag">-F</span> <span class="str">txt,srt,vtt</span>`,
+      desc: mega
+        ? `Transcribe with <span class="hl">Mega-ASR</span> (Qwen3-ASR + a robustness LoRA), tuned to stay accurate on <span class="hl">noisy or degraded audio</span>, best for English and Chinese. Point <span class="hl">--mega-repo</span> at a local clone; a GPU is recommended.`
+        : `Transcribe a local file with <span class="hl">${bl}</span>${b==='faster_whisper'?' (CTranslate2, GPU/CPU)':b==='whisper_cpp'?' (GGML, CPU-optimized)':' (OpenAI API, no local model)'}. Outputs <span class="hl">plain text</span>, <span class="hl">SRT</span>, and <span class="hl">WebVTT</span> subtitles. Supports MP3, MP4, WAV, MKV, FLAC, and any ffmpeg-compatible format.`,
+    };
+  }
+  if (i === 2) {
+    return {
+      raw:  `python main.py -u "https://youtu.be/dQw4w9WgXcQ" --backend ${b}${mega ? ' --mega-repo ./Mega-ASR --mega-allow-cpu' : ''} -l en -F srt`,
+      html: `<span class="cmd">python</span> <span class="str">main.py</span> <span class="flag">-u</span> <span class="str">"https://youtu.be/dQw4w9WgXcQ"</span> <span class="flag">--backend</span> <span class="kw">${b}</span>${mega ? megaFlags : ''} <span class="flag">-l</span> <span class="str">en</span> <span class="flag">-F</span> <span class="str">srt</span>`,
+      desc: `Transcribe a <span class="hl">YouTube URL</span> (or any HTTP URL) via yt-dlp. Audio is extracted, chunked with ffmpeg, transcribed in parallel, and output as <span class="hl">SRT subtitles</span>. Language auto-detected if <span class="hl">-l</span> is omitted.`,
+    };
+  }
+}
+
+function setTab(i) {
+  cur = i;
+  document.querySelectorAll('.tab').forEach((t, idx) => t.classList.toggle('active', idx === i));
+  const entry = buildCmd(i);
+  const d = document.getElementById('cmd-display');
+  d.innerHTML = '';
+  void d.offsetWidth;
+  d.innerHTML = entry.html;
+  document.getElementById('tab-desc').innerHTML = entry.desc;
+}
+
+function copyCmd() {
+  const btn = document.getElementById('copy-btn');
+  navigator.clipboard.writeText(buildCmd(cur).raw).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1800);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= S.length && !e.ctrlKey && !e.metaKey && !e.altKey) setTab(n - 1);
+});
+
+setTab(0);
+</script>
+</body>
+</html>

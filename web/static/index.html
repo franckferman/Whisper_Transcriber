@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>whispr</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header class="header">
+      <h1 class="header__title">whispr</h1>
+      <p class="header__subtitle">Audio &amp; video transcription powered by Whisper</p>
+    </header>
+
+    <!-- Main form card -->
+    <main class="card" id="form-card">
+
+      <!-- Source type tabs -->
+      <section class="section">
+        <label class="section__label">Source</label>
+        <div class="tab-bar" role="tablist">
+          <button class="tab tab--active" role="tab" id="tab-file"
+                  aria-selected="true" data-target="panel-file">
+            File upload
+          </button>
+          <button class="tab" role="tab" id="tab-url"
+                  aria-selected="false" data-target="panel-url">
+            URL
+          </button>
+        </div>
+
+        <div class="tab-panel" id="panel-file">
+          <div class="file-drop" id="file-drop" tabindex="0"
+               aria-label="Drop audio or video file here">
+            <input type="file" id="file-input"
+                   accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.mkv,.webm,.ogg,.flac"
+                   hidden />
+            <div class="file-drop__icon">&#8613;</div>
+            <p class="file-drop__text">
+              Drag &amp; drop or <button class="link-btn" id="browse-btn">browse</button>
+            </p>
+            <p class="file-drop__hint" id="file-name-hint">No file selected</p>
+          </div>
+        </div>
+
+        <div class="tab-panel tab-panel--hidden" id="panel-url">
+          <input type="url" id="url-input" class="text-input"
+                 placeholder="https://youtube.com/watch?v=... or direct audio/video URL" />
+        </div>
+      </section>
+
+      <!-- Backend selector -->
+      <section class="section">
+        <label class="section__label">Backend</label>
+        <div class="backend-list" id="backend-list">
+          <!-- Populated by app.js -->
+          <p class="loading-text">Detecting backends...</p>
+        </div>
+
+        <!-- OpenAI key -->
+        <div class="extra-option" id="openai-key-row" hidden>
+          <label class="extra-option__label" for="openai-key-input">
+            OpenAI API Key
+          </label>
+          <input type="password" id="openai-key-input" class="text-input"
+                 placeholder="sk-..." autocomplete="off" />
+        </div>
+
+        <!-- faster-whisper model -->
+        <div class="extra-option" id="faster-whisper-row" hidden>
+          <label class="extra-option__label" for="fw-model-select">Model</label>
+          <select id="fw-model-select" class="select-input">
+            <option value="tiny">tiny (~75 MB), fastest</option>
+            <option value="base" selected>base (~150 MB), recommended</option>
+            <option value="small">small (~500 MB)</option>
+            <option value="medium">medium (~1.5 GB)</option>
+            <option value="large-v2">large-v2 (~3 GB), best quality</option>
+          </select>
+        </div>
+
+        <!-- whisper.cpp: binary + model are managed server-side -->
+        <div class="extra-option" id="whisper-cpp-row" hidden>
+          <p class="extra-option__note" id="whisper-cpp-note">
+            Uses the whisper.cpp binary and model detected on the server.
+          </p>
+        </div>
+      </section>
+
+      <!-- Options -->
+      <section class="section options-grid">
+        <div class="option-group">
+          <label class="section__label" for="language-select">Language</label>
+          <select id="language-select" class="select-input">
+            <option value="auto">Auto-detect</option>
+            <option value="fr">French</option>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="de">German</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese</option>
+            <option value="nl">Dutch</option>
+            <option value="pl">Polish</option>
+            <option value="ru">Russian</option>
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese</option>
+            <option value="ar">Arabic</option>
+            <option value="ko">Korean</option>
+          </select>
+        </div>
+
+        <div class="option-group">
+          <label class="section__label">Output formats</label>
+          <div class="checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" name="fmt" value="txt" checked /> TXT
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="fmt" value="srt" /> SRT
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="fmt" value="vtt" /> VTT
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="fmt" value="json" /> JSON
+            </label>
+          </div>
+        </div>
+
+        <div class="option-group">
+          <label class="section__label" for="workers-input">Workers</label>
+          <input type="number" id="workers-input" class="text-input text-input--short"
+                 value="2" min="1" max="8" />
+        </div>
+      </section>
+
+      <!-- Submit -->
+      <div class="submit-row">
+        <button class="btn btn--primary" id="transcribe-btn">
+          Transcribe
+        </button>
+      </div>
+
+    </main>
+
+    <!-- Progress card (hidden until job starts) -->
+    <div class="card card--progress" id="progress-card" hidden>
+      <div class="progress-header">
+        <div class="spinner" id="spinner" aria-label="Processing"></div>
+        <span class="progress-status" id="progress-status">Starting...</span>
+      </div>
+      <div class="log-box" id="log-box" aria-live="polite" aria-label="Job log">
+      </div>
+    </div>
+
+    <!-- Results card (hidden until done) -->
+    <div class="card card--results" id="results-card" hidden>
+      <h2 class="results-title">
+        <span class="check-icon">&#10003;</span>
+        Transcription complete
+      </h2>
+      <div class="download-row" id="download-row">
+        <!-- Download buttons injected by app.js -->
+      </div>
+      <button class="btn btn--secondary" id="reset-btn">
+        Transcribe another
+      </button>
+    </div>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

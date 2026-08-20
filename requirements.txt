@@ -1,0 +1,15 @@
+# Core dependencies
+ffmpeg-python>=0.2.0
+tqdm>=4.67.0
+requests>=2.28.0
+yt-dlp>=2024.1.0
+pydub>=0.25.1
+
+# Optional backends (install as needed)
+# faster-whisper>=0.10.0
+# openai>=1.0.0
+
+# Optional web UI
+# fastapi>=0.100.0
+# uvicorn[standard]>=0.23.0
+# python-multipart>=0.0.6

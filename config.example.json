@@ -1,0 +1,55 @@
+{
+  "_comment": "Example configuration file for whispr. Copy to config.json and adjust.",
+
+  "input_file": null,
+  "input_url": null,
+
+  "backend": "faster_whisper",
+  "fallback_backend": null,
+
+  "whisper_cpp_binary": "whisper",
+  "whisper_cpp_model": "models/ggml-base.bin",
+  "whisper_cpp_extra_args": [],
+
+  "faster_whisper_model": "base",
+  "faster_whisper_device": "cpu",
+  "faster_whisper_compute_type": "int8",
+
+  "openai_api_key": "${OPENAI_API_KEY}",
+  "openai_model": "whisper-1",
+
+  "mega_asr_repo_dir": null,
+  "mega_asr_ckpt_dir": null,
+  "mega_asr_device_map": null,
+  "mega_asr_allow_cpu": false,
+  "mega_asr_force_lora": false,
+
+  "language": null,
+  "chunk_duration_seconds": 600,
+  "workers": 2,
+  "temp_dir": null,
+
+  "word_timestamps": false,
+  "word_timestamps_provider": "native",
+
+  "output_formats": ["txt", "srt"],
+  "output_dir": "./output",
+  "output_prefix": "transcript",
+
+  "translate_to": null,
+  "translate_from": null,
+  "translate_package_path": null,
+  "translate_allow_download": true,
+  "translate_text_input": null,
+
+  "max_retries": 3,
+  "retry_base_delay": 1.0,
+  "retry_max_delay": 30.0,
+
+  "dry_run": false,
+  "debug": false,
+  "log_file": null,
+
+  "ytdlp_format": "bestaudio/best",
+  "ytdlp_output_template": "%(title)s.%(ext)s"
+}
